@@ -1,7 +1,8 @@
 <?php
-$pageTitle = 'Contact Us';
-$pageDesc = 'Get in touch with Travelr Taxi & Tours Services. Call, WhatsApp, or send us a message.';
-require_once 'includes/header.php';
+require_once 'includes/config.php';
+require_once 'includes/db.php';
+require_once 'includes/auth.php';
+require_once 'includes/helpers.php';
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -24,6 +25,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     );
     redirectWith('/contact.php', 'success', 'Thank you for your message! We\'ll get back to you shortly.');
 }
+
+$pageTitle = 'Contact Us';
+$pageDesc = 'Get in touch with Travelr Taxi & Tours Services. Call, WhatsApp, or send us a message.';
+require_once 'includes/header.php';
 ?>
 
 <section class="page-hero">

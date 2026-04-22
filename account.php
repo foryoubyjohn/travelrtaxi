@@ -1,9 +1,14 @@
 <?php
-$pageTitle = 'My Account';
-require_once 'includes/header.php';
+require_once 'includes/config.php';
+require_once 'includes/db.php';
+require_once 'includes/auth.php';
+require_once 'includes/helpers.php';
+
 requireLogin();
 
 $user = getCurrentUser();
+$pageTitle = 'My Account';
+require_once 'includes/header.php';
 $bookings = dbFetchAll("SELECT * FROM bookings WHERE customer_id = ? ORDER BY created_at DESC", [$user['id']]);
 ?>
 

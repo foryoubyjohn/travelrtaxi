@@ -1,7 +1,8 @@
 <?php
-$pageTitle = 'Book a Ride';
-$pageDesc = 'Book your taxi ride or tour with Travelr Taxi & Tours Services. Easy online booking with instant price estimates.';
-require_once 'includes/header.php';
+require_once 'includes/config.php';
+require_once 'includes/db.php';
+require_once 'includes/auth.php';
+require_once 'includes/helpers.php';
 
 // Pre-fill from query params
 $pickup = sanitize($_GET['pickup'] ?? '');
@@ -86,6 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+$pageTitle = 'Book a Ride';
+$pageDesc = 'Book your taxi ride or tour with Travelr Taxi & Tours Services. Easy online booking with instant price estimates.';
+require_once 'includes/header.php';
 ?>
 
 <section class="page-hero">

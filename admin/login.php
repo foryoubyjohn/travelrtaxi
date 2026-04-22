@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pageTitle = 'Admin Login';
+require_once 'includes/admin-header.php';
 ?>
 <div class="admin-login-page">
     <div class="admin-login-card">
