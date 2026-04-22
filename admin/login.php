@@ -1,7 +1,10 @@
 <?php
-$pageTitle = 'Admin Login';
-require_once 'includes/admin-header.php';
+require_once dirname(__DIR__) . '/includes/config.php';
+require_once dirname(__DIR__) . '/includes/db.php';
+require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/helpers.php';
 
+// Redirect already-logged-in admins
 if (isAdmin()) {
     header('Location: /admin/');
     exit;
@@ -19,10 +22,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Invalid credentials or insufficient permissions.';
         if ($result['success']) {
             logoutUser();
-            session_start();
         }
     }
 }
+
+$pageTitle = 'Admin Login';
 ?>
 <div class="admin-login-page">
     <div class="admin-login-card">
@@ -43,8 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <button type="submit" class="btn btn-primary btn-block btn-lg">Sign In</button>
         </form>
-        <p class="login-hint">Default: admin@travelrtaxi.com / admin123</p>
+        <p class="login-hint">Default: admin@travelrtaxi.com / Password123</p>
     </div>
 </div>
-</body>
-</html>
+<?php require_once 'includes/admin-footer.php'; ?>
