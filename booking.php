@@ -69,18 +69,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $estimatedPrice = $priceCalc['price'];
 
         if (empty($errors)) {
-            $bookingRef = generateBookingRef();
-            $customerId = isLoggedIn() ? $_SESSION['user_id'] : null;
+            $bookingRef    = generateBookingRef();
+            $customerId    = isLoggedIn() ? $_SESSION['user_id'] : null;
+            $trackingToken = bin2hex(random_bytes(16));
 
             $bookingId = dbInsert(
-                "INSERT INTO bookings (booking_ref, customer_id, customer_name, customer_email, customer_phone, pickup_location, dropoff_location, booking_date, booking_time, passengers, service_type, vehicle_type, estimated_price, payment_method, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                [$bookingRef, $customerId, $customerName, $customerEmail, $customerPhone, $pickup, $dropoff, $date, $time, $passengers, $serviceType, $vehicleType, $estimatedPrice, $paymentMethod, $notes]
+                "INSERT INTO bookings (booking_ref, customer_id, customer_name, customer_email, customer_phone, pickup_location, dropoff_location, booking_date, booking_time, passengers, service_type, vehicle_type, estimated_price, payment_method, notes, status, tracking_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+                [$bookingRef, $customerId, $customerName, $customerEmail, $customerPhone, $pickup, $dropoff, $date, $time, $passengers, $serviceType, $vehicleType, $estimatedPrice, $paymentMethod, $notes, $trackingToken]
             );
 
             if ($bookingId) {
                 $success = true;
-                $_SESSION['last_booking_ref'] = $bookingRef;
-                $_SESSION['last_booking_price'] = $estimatedPrice;
+                $_SESSION['last_booking_ref']     = $bookingRef;
+                $_SESSION['last_booking_price']   = $estimatedPrice;
+                $_SESSION['last_tracking_token']  = $trackingToken;
             } else {
                 $errors[] = 'Failed to create booking. Please try again.';
             }
@@ -118,7 +120,12 @@ require_once 'includes/header.php';
                 <a href="<?php echo getCallLink(); ?>" class="btn btn-dark btn-lg"><i class="fas fa-phone"></i> Call <?php echo PHONE_PRIMARY; ?></a>
                 <a href="<?php echo getWhatsAppLink('Hi, I just booked a ride. My reference is ' . $_SESSION['last_booking_ref']); ?>" class="btn btn-whatsapp btn-lg" target="_blank"><i class="fab fa-whatsapp"></i> Confirm on WhatsApp</a>
             </div>
-            <a href="/booking.php" class="btn btn-outline" style="margin-top:20px;">Book Another Ride</a>
+            <?php if (!empty($_SESSION['last_tracking_token'])): ?>
+            <div style="margin-top:20px;">
+                <a href="/track.php?token=<?php echo urlencode($_SESSION['last_tracking_token']); ?>" class="btn btn-outline btn-lg"><i class="fas fa-map-marker-alt"></i> Track My Ride</a>
+            </div>
+            <?php endif; ?>
+            <a href="/booking.php" class="btn btn-outline" style="margin-top:12px;">Book Another Ride</a>
         </div>
 
         <?php else: ?>

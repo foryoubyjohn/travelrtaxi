@@ -4,7 +4,7 @@ require_once 'includes/db.php';
 require_once 'includes/auth.php';
 require_once 'includes/helpers.php';
 
-requireLogin();
+requireCustomer();
 
 $user = getCurrentUser();
 $pageTitle = 'My Account';

@@ -10,11 +10,14 @@ require_once dirname(dirname(__DIR__)) . '/includes/db.php';
 require_once dirname(dirname(__DIR__)) . '/includes/auth.php';
 require_once dirname(dirname(__DIR__)) . '/includes/helpers.php';
 
-// Require admin for all dispatch API calls
-if (!isLoggedIn() || !isAdmin()) {
+// Admin and dispatcher roles both have dispatch access
+if (!isLoggedIn() || !canDispatch()) {
+    http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
+
+$callerRole = $_SESSION['user_role'];
 
 // ── GET requests ──
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -111,8 +114,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Log status history
         dbInsert(
-            "INSERT INTO booking_status_history (booking_id, old_status, new_status, changed_by, changed_by_role, notes) VALUES (?, ?, 'assigned', ?, 'admin', ?)",
-            [$bookingId, $booking['status'], $assignedBy, $reason ?: 'Driver assigned via dispatch']
+            "INSERT INTO booking_status_history (booking_id, old_status, new_status, changed_by, changed_by_role, notes) VALUES (?, ?, 'assigned', ?, ?, ?)",
+            [$bookingId, $booking['status'], $assignedBy, $callerRole, $reason ?: 'Driver assigned via dispatch']
         );
 
         $driverName = $driver['first_name'] . ' ' . $driver['last_name'];
@@ -189,8 +192,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Log status history
         dbInsert(
-            "INSERT INTO booking_status_history (booking_id, old_status, new_status, changed_by, changed_by_role, notes) VALUES (?, ?, ?, ?, 'admin', ?)",
-            [$bookingId, $oldStatus ?: $booking['status'], $newStatus, $changedBy, $notes ?: null]
+            "INSERT INTO booking_status_history (booking_id, old_status, new_status, changed_by, changed_by_role, notes) VALUES (?, ?, ?, ?, ?, ?)",
+            [$bookingId, $oldStatus ?: $booking['status'], $newStatus, $changedBy, $callerRole, $notes ?: null]
         );
 
         $statusLabel = ucfirst(str_replace('_', ' ', $newStatus));

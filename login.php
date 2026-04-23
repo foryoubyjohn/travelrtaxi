@@ -4,7 +4,11 @@ require_once 'includes/db.php';
 require_once 'includes/auth.php';
 require_once 'includes/helpers.php';
 
+// Redirect already-authenticated users to their area
 if (isLoggedIn()) {
+    if (isAdmin())          { header('Location: /admin/');             exit; }
+    if (isDispatcher())     { header('Location: /admin/dispatch.php'); exit; }
+    if (isDriver())         { header('Location: /driver/');            exit; }
     header('Location: /account.php');
     exit;
 }
@@ -20,11 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $result = loginUser($email, $password);
         if ($result['success']) {
-            if ($result['user']['role'] === 'admin') {
-                header('Location: /admin/');
-            } else {
-                header('Location: /account.php');
-            }
+            $role = $result['user']['role'];
+            if ($role === 'admin')          { header('Location: /admin/');             exit; }
+            if ($role === 'dispatcher')     { header('Location: /admin/dispatch.php'); exit; }
+            if ($role === 'driver')         { header('Location: /driver/');            exit; }
+            header('Location: /account.php');
             exit;
         }
         $error = $result['error'];
@@ -70,8 +74,8 @@ require_once 'includes/header.php';
     <div class="container">
         <div class="auth-container">
             <div class="auth-tabs">
-                <button class="auth-tab <?php echo $tab === 'login' ? 'active' : ''; ?>" onclick="showTab('login')">Login</button>
-                <button class="auth-tab <?php echo $tab === 'register' ? 'active' : ''; ?>" onclick="showTab('register')">Register</button>
+                <button class="auth-tab <?php echo $tab === 'login' ? 'active' : ''; ?>" onclick="showTab('login', this)">Login</button>
+                <button class="auth-tab <?php echo $tab === 'register' ? 'active' : ''; ?>" onclick="showTab('register', this)">Register</button>
             </div>
 
             <?php if ($error): ?>
@@ -130,11 +134,11 @@ require_once 'includes/header.php';
 </section>
 
 <script>
-function showTab(tab) {
+function showTab(tab, btn) {
     document.getElementById('loginForm').style.display = tab === 'login' ? 'block' : 'none';
     document.getElementById('registerForm').style.display = tab === 'register' ? 'block' : 'none';
     document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
+    if (btn) btn.classList.add('active');
 }
 </script>
 

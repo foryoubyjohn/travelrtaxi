@@ -1,7 +1,6 @@
 <?php
-require_once 'includes/admin-header.php';
-
 $pageTitle = 'Site Settings';
+require_once 'includes/admin-header.php';
 
 // Handle site settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_action'])) {

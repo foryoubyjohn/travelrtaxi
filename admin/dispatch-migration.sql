@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS booking_status_history (
     old_status VARCHAR(50) DEFAULT NULL,
     new_status VARCHAR(50) NOT NULL,
     changed_by INT DEFAULT NULL,
-    changed_by_role ENUM('admin','driver','system','customer') DEFAULT 'admin',
+    changed_by_role ENUM('admin','dispatcher','driver','system','customer') DEFAULT 'admin',
     notes TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,

@@ -13,8 +13,9 @@ require_once dirname(dirname(__DIR__)) . '/includes/db.php';
 require_once dirname(dirname(__DIR__)) . '/includes/auth.php';
 require_once dirname(dirname(__DIR__)) . '/includes/helpers.php';
 
-// Require admin auth
-if (!isLoggedIn() || !isAdmin()) {
+// Admin and dispatcher roles both have dispatch access
+if (!isLoggedIn() || !canDispatch()) {
+    http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }

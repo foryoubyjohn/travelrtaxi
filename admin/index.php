@@ -5,7 +5,7 @@ require_once 'includes/admin-header.php';
 // Dashboard stats
 $totalBookings = dbFetchOne("SELECT COUNT(*) as c FROM bookings")['c'];
 $pendingBookings = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE status = 'pending'")['c'];
-$activeTrips = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE status = 'in_progress'")['c'];
+$activeTrips = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE status IN ('assigned','accepted','on_the_way','arrived','trip_started','in_progress')")['c'];
 $completedBookings = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE status = 'completed'")['c'];
 $totalRevenue = dbFetchOne("SELECT COALESCE(SUM(final_price), 0) as total FROM bookings WHERE status = 'completed'")['total'];
 $totalCustomers = dbFetchOne("SELECT COUNT(*) as c FROM users WHERE role = 'customer'")['c'];
