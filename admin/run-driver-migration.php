@@ -1,17 +1,17 @@
 <?php
 /**
- * One-time migration runner — Dispatch Command Center
+ * One-time migration runner — Driver Panel
  * Visit this page once to apply the migration, then it deletes itself.
  */
 require_once 'includes/admin-header.php';
 
-$sqlFile = __DIR__ . '/dispatch-migration.sql';
+$sqlFile = dirname(__DIR__) . '/driver/migration.sql';
 $results = [];
 $allOk   = true;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
     if (!file_exists($sqlFile)) {
-        $results[] = ['sql' => 'Load file', 'ok' => false, 'msg' => 'dispatch-migration.sql not found in admin/'];
+        $results[] = ['sql' => 'Load file', 'ok' => false, 'msg' => 'driver/migration.sql not found'];
         $allOk = false;
     } else {
         $raw        = file_get_contents($sqlFile);
@@ -29,14 +29,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
                 $results[] = ['sql' => mb_strimwidth(trim($sql), 0, 80, '...'), 'ok' => true,  'msg' => 'OK'];
             } catch (Throwable $e) {
                 $msg = $e->getMessage();
-                // Already-exists errors are harmless — treat as success
                 $harmless = str_contains($msg, 'already exists') || str_contains($msg, 'Duplicate column');
                 $results[] = ['sql' => mb_strimwidth(trim($sql), 0, 80, '...'), 'ok' => $harmless, 'msg' => $harmless ? 'Already exists (skipped)' : $msg];
                 if (!$harmless) $allOk = false;
             }
         }
 
-        // Self-destruct on full success
         if ($allOk) {
             @unlink(__FILE__);
         }
@@ -58,17 +56,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
 .mig-failure { background: #fee2e2; border: 1px solid #dc2626; border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1.25rem; font-weight: 600; color: #991b1b; }
 .btn-run { background: #0f172a; color: #fff; border: none; padding: .65rem 1.75rem; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: 600; }
 .btn-run:hover { background: #1e3a5f; }
+.mig-list { margin: .5rem 0 0 1.25rem; font-size: .875rem; line-height: 1.8; }
 </style>
 
 <div class="mig-wrap">
-    <h2><i class="fas fa-database"></i> Dispatch Migration Runner</h2>
+    <h2><i class="fas fa-car"></i> Driver Panel Migration</h2>
 
     <?php if (empty($results)): ?>
     <div class="mig-warn">
         <strong><i class="fas fa-exclamation-triangle"></i> Run once only.</strong>
-        This script will create 3 new tables (<code>dispatch_notes</code>, <code>booking_status_history</code>, <code>assignment_log</code>)
-        and add the <code>dispatcher_notes</code> column to <code>bookings</code>.
-        It will <strong>delete itself</strong> after a successful run.
+        This script will apply the following changes to your database and
+        <strong>delete itself</strong> after a successful run.
+        <ul class="mig-list">
+            <li>Add <code>availability</code>, <code>last_location</code>, <code>shift_started_at</code>, <code>shift_ended_at</code>, <code>total_earnings</code> to <code>drivers</code></li>
+            <li>Extend <code>bookings.status</code> enum with driver lifecycle values</li>
+            <li>Add <code>driver_accepted_at</code>, <code>driver_arrived_at</code>, <code>trip_started_at</code>, <code>trip_completed_at</code> to <code>bookings</code></li>
+            <li>Create <code>driver_action_log</code> table</li>
+            <li>Create <code>driver_earnings</code> table</li>
+            <li>Create <code>driver_notes</code> table</li>
+        </ul>
     </div>
     <form method="POST">
         <button type="submit" name="run" value="1" class="btn-run"><i class="fas fa-play"></i> Run Migration Now</button>
@@ -95,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
     <div class="mig-success">
         <i class="fas fa-check-circle"></i> Migration completed successfully!
         This script has been deleted. Proceed to
-        <a href="/admin/run-realtime-migration.php">Step 3 — Real-Time &amp; GPS Migration</a>.
+        <a href="/admin/run-migration.php">Step 2 — Dispatch Migration</a>.
     </div>
     <?php else: ?>
     <div class="mig-failure">
