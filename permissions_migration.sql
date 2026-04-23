@@ -27,16 +27,11 @@ ALTER TABLE booking_status_history
 -- 3. Reconcile dispatch_notes schema divergence
 --    dispatch_migration.sql used 'dispatcher_id'
 --    admin/dispatch-migration.sql used 'admin_id'
---    admin/api/dispatch.php (the active handler) uses 'admin_id'.
---    Ensure both columns exist so old rows are not orphaned.
+--    Ensure both columns exist side-by-side.
 -- ============================================================
 ALTER TABLE dispatch_notes
-  ADD COLUMN IF NOT EXISTS admin_id INT DEFAULT NULL AFTER booking_id,
-  ADD COLUMN IF NOT EXISTS dispatcher_id INT DEFAULT NULL AFTER admin_id;
-
--- Back-fill whichever column is NULL from the other
-UPDATE dispatch_notes SET admin_id = dispatcher_id WHERE admin_id IS NULL AND dispatcher_id IS NOT NULL;
-UPDATE dispatch_notes SET dispatcher_id = admin_id WHERE dispatcher_id IS NULL AND admin_id IS NOT NULL;
+  ADD COLUMN IF NOT EXISTS admin_id INT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS dispatcher_id INT DEFAULT NULL;
 
 -- ============================================================
 -- 4. Ensure bookings has a tracking_token column

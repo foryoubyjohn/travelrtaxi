@@ -24,15 +24,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
         $results[] = ['sql' => 'Load file', 'ok' => false, 'msg' => 'permissions_migration.sql not found'];
         $allOk = false;
     } else {
-        $raw        = file_get_contents($sqlFile);
-        // Split on statement-ending semicolons; skip blank lines, comments, USE statements
-        $statements = array_filter(
-            array_map('trim', preg_split('/;[\s]*\n/', $raw)),
-            fn($s) => $s !== ''
-                   && !preg_match('/^--/', $s)
-                   && !preg_match('/^\/\*/', $s)
-                   && !preg_match('/^USE\s/i', $s)
-        );
+        $raw   = file_get_contents($sqlFile);
+        $chunks = preg_split('/;[ \t]*\n/', $raw);
+
+        // For each chunk: strip leading blank lines and comment lines, then keep
+        // whatever real SQL remains (filtering USE statements and empty results).
+        $statements = [];
+        foreach ($chunks as $chunk) {
+            $lines = explode("\n", $chunk);
+            while (!empty($lines)) {
+                $first = ltrim($lines[0]);
+                if ($first === '' || substr($first, 0, 2) === '--' || substr($first, 0, 2) === '/*') {
+                    array_shift($lines);
+                } else {
+                    break;
+                }
+            }
+            $cleaned = trim(implode("\n", $lines));
+            if ($cleaned !== '' && !preg_match('/^USE\s/i', $cleaned)) {
+                $statements[] = $cleaned;
+            }
+        }
+
         foreach ($statements as $sql) {
             if (trim($sql) === '') continue;
             try {
