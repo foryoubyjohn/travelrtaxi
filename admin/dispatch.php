@@ -1,973 +1,632 @@
 <?php
-$pageTitle = 'Dispatch Console';
+/**
+ * Dispatch Command Center
+ * Central dispatch screen for managing all bookings, driver assignments, and trip status
+ */
+$pageTitle = 'Dispatch Center';
 require_once 'includes/admin-header.php';
 
-// ── Filters from GET ──────────────────────────────────────────
-$filterDate    = sanitize($_GET['date']     ?? 'today');
-$filterStatus  = sanitize($_GET['status']  ?? 'active');
-$filterDriver  = (int)($_GET['driver']     ?? 0);
-$filterVehicle = sanitize($_GET['vehicle'] ?? '');
-$filterService = sanitize($_GET['service'] ?? '');
-$filterSearch  = sanitize($_GET['search']  ?? '');
-$filterDateFrom = sanitize($_GET['from']   ?? '');
-$filterDateTo   = sanitize($_GET['to']     ?? '');
+// ── Filters ──
+$filter     = sanitize($_GET['filter'] ?? 'today');
+$driverFilter = intval($_GET['driver'] ?? 0);
+$vehicleFilter = sanitize($_GET['vehicle'] ?? '');
+$searchQuery  = sanitize($_GET['q'] ?? '');
 
-// ── Status groups ──────────────────────────────────────────────
-$DISPATCH_STATUSES = [
-    'pending'      => ['label' => 'Pending',         'color' => '#f59e0b', 'bg' => '#fffbeb'],
-    'confirmed'    => ['label' => 'Confirmed',       'color' => '#3b82f6', 'bg' => '#eff6ff'],
-    'assigned'     => ['label' => 'Assigned',        'color' => '#8b5cf6', 'bg' => '#f5f3ff'],
-    'accepted'     => ['label' => 'Driver Accepted', 'color' => '#06b6d4', 'bg' => '#ecfeff'],
-    'declined'     => ['label' => 'Declined',        'color' => '#6b7280', 'bg' => '#f9fafb'],
-    'on_the_way'   => ['label' => 'On the Way',      'color' => '#f97316', 'bg' => '#fff7ed'],
-    'arrived'      => ['label' => 'Arrived',         'color' => '#eab308', 'bg' => '#fefce8'],
-    'trip_started' => ['label' => 'Trip Started',    'color' => '#10b981', 'bg' => '#ecfdf5'],
-    'in_progress'  => ['label' => 'In Progress',     'color' => '#10b981', 'bg' => '#ecfdf5'],
-    'completed'    => ['label' => 'Completed',       'color' => '#059669', 'bg' => '#f0fdf4'],
-    'cancelled'    => ['label' => 'Cancelled',       'color' => '#ef4444', 'bg' => '#fef2f2'],
-    'no_show'      => ['label' => 'No Show',         'color' => '#6b7280', 'bg' => '#f9fafb'],
-];
-
-// ── Build main booking query ────────────────────────────────────
+// ── Build query ──
 $where  = [];
 $params = [];
 
-// Date filter
-$today = date('Y-m-d');
-if ($filterDate === 'today') {
-    $where[] = "b.booking_date = ?";
-    $params[] = $today;
-} elseif ($filterDate === 'upcoming') {
-    $where[] = "b.booking_date > ?";
-    $params[] = $today;
-} elseif ($filterDate === 'custom' && $filterDateFrom) {
-    $where[] = "b.booking_date >= ?";
-    $params[] = $filterDateFrom;
-    if ($filterDateTo) {
-        $where[] = "b.booking_date <= ?";
-        $params[] = $filterDateTo;
-    }
+switch ($filter) {
+    case 'today':
+        $where[] = "b.booking_date = CURDATE()";
+        break;
+    case 'active':
+        $where[] = "b.status IN ('assigned','accepted','on_the_way','arrived','trip_started','in_progress')";
+        break;
+    case 'completed':
+        $where[] = "b.status = 'completed'";
+        break;
+    case 'unassigned':
+        $where[] = "(b.driver_id IS NULL OR b.status IN ('pending','confirmed'))";
+        break;
+    case 'cancelled':
+        $where[] = "b.status IN ('cancelled','no_show','declined')";
+        break;
+    case 'all':
+    default:
+        break;
 }
 
-// Status filter
-$activeStatuses = ['pending','confirmed','assigned','accepted','on_the_way','arrived','trip_started','in_progress'];
-if ($filterStatus === 'active') {
-    $placeholders = implode(',', array_fill(0, count($activeStatuses), '?'));
-    $where[] = "b.status IN ($placeholders)";
-    $params  = array_merge($params, $activeStatuses);
-} elseif ($filterStatus === 'unassigned') {
-    $where[] = "b.driver_id IS NULL AND b.status NOT IN ('completed','cancelled','no_show')";
-} elseif ($filterStatus === 'completed') {
-    $where[] = "b.status = 'completed'";
-} elseif ($filterStatus === 'cancelled') {
-    $where[] = "b.status IN ('cancelled','no_show')";
-} elseif ($filterStatus === 'all') {
-    // no status filter
-} elseif (array_key_exists($filterStatus, $DISPATCH_STATUSES)) {
-    $where[] = "b.status = ?";
-    $params[] = $filterStatus;
-}
-
-// Driver filter
-if ($filterDriver) {
+if ($driverFilter > 0) {
     $where[] = "b.driver_id = ?";
-    $params[] = $filterDriver;
+    $params[] = $driverFilter;
 }
 
-// Vehicle type filter
-if ($filterVehicle) {
+if ($vehicleFilter && in_array($vehicleFilter, ['sedan','van','minibus'])) {
     $where[] = "b.vehicle_type = ?";
-    $params[] = $filterVehicle;
+    $params[] = $vehicleFilter;
 }
 
-// Service type filter
-if ($filterService) {
-    $where[] = "b.service_type = ?";
-    $params[] = $filterService;
-}
-
-// Search
-if ($filterSearch) {
-    $like = '%' . $filterSearch . '%';
+if ($searchQuery) {
     $where[] = "(b.booking_ref LIKE ? OR b.customer_name LIKE ? OR b.customer_phone LIKE ? OR b.pickup_location LIKE ? OR b.dropoff_location LIKE ?)";
+    $like = "%{$searchQuery}%";
     $params = array_merge($params, [$like, $like, $like, $like, $like]);
 }
 
-$whereSQL = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+$whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $bookings = dbFetchAll(
     "SELECT b.*,
-            v.name AS vehicle_name, v.plate_number,
-            du.first_name AS drv_first, du.last_name AS drv_last, du.phone AS drv_phone,
-            (SELECT COUNT(*) FROM dispatch_notes dn WHERE dn.booking_id = b.id) AS note_count
+            d_rec.id as driver_record_id,
+            d_user.first_name as driver_first, d_user.last_name as driver_last, d_user.phone as driver_phone,
+            d_rec.availability as driver_availability,
+            v.name as vehicle_name, v.plate_number
      FROM bookings b
-     LEFT JOIN vehicles v  ON b.vehicle_id = v.id
-     LEFT JOIN drivers  d  ON b.driver_id  = d.id
-     LEFT JOIN users    du ON d.user_id    = du.id
-     $whereSQL
+     LEFT JOIN drivers d_rec ON b.driver_id = d_rec.id
+     LEFT JOIN users d_user ON d_rec.user_id = d_user.id
+     LEFT JOIN vehicles v ON b.vehicle_id = v.id
+     {$whereClause}
      ORDER BY
-       CASE b.status
-         WHEN 'trip_started' THEN 1
-         WHEN 'in_progress'  THEN 2
-         WHEN 'on_the_way'   THEN 3
-         WHEN 'arrived'      THEN 4
-         WHEN 'accepted'     THEN 5
-         WHEN 'assigned'     THEN 6
-         WHEN 'confirmed'    THEN 7
-         WHEN 'pending'      THEN 8
-         WHEN 'declined'     THEN 9
-         WHEN 'completed'    THEN 10
-         WHEN 'cancelled'    THEN 11
-         WHEN 'no_show'      THEN 12
-         ELSE 13
-       END,
-       b.booking_date ASC, b.booking_time ASC",
+        FIELD(b.status, 'pending','confirmed','assigned','accepted','on_the_way','arrived','trip_started','in_progress','completed','no_show','declined','cancelled'),
+        b.booking_date ASC, b.booking_time ASC",
     $params
 );
 
-// ── Operational widgets ──────────────────────────────────────────
-$widgets = dbFetchOne(
-    "SELECT
-        SUM(CASE WHEN b.status IN ('trip_started','in_progress','on_the_way','arrived','accepted') THEN 1 ELSE 0 END) AS active_trips,
-        SUM(CASE WHEN b.driver_id IS NULL AND b.status NOT IN ('completed','cancelled','no_show') THEN 1 ELSE 0 END) AS unassigned,
-        SUM(CASE WHEN b.status = 'completed' AND b.booking_date = CURDATE() THEN 1 ELSE 0 END) AS completed_today,
-        SUM(CASE WHEN b.status = 'completed' AND b.booking_date = CURDATE() THEN COALESCE(b.final_price, b.estimated_price, 0) ELSE 0 END) AS revenue_today
-     FROM bookings b"
-);
+// ── Stats ──
+$statsActive = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE status IN ('assigned','accepted','on_the_way','arrived','trip_started','in_progress')")['c'];
+$statsUnassigned = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE status IN ('pending','confirmed') AND driver_id IS NULL")['c'];
+$statsAvailableDrivers = dbFetchOne("SELECT COUNT(*) as c FROM drivers WHERE status = 'available' AND availability = 'available'")['c'];
+$statsRevenueToday = dbFetchOne("SELECT COALESCE(SUM(final_price),0) as r FROM bookings WHERE status = 'completed' AND DATE(trip_completed_at) = CURDATE()")['r'];
+$statsTodayBookings = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE booking_date = CURDATE()")['c'];
+$statsCompletedToday = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE status = 'completed' AND DATE(trip_completed_at) = CURDATE()")['c'];
 
-$driverStats = dbFetchOne(
-    "SELECT
-        SUM(CASE WHEN d.status = 'available' AND u.is_active = 1 THEN 1 ELSE 0 END) AS available_drivers,
-        SUM(CASE WHEN d.status = 'on_trip'   AND u.is_active = 1 THEN 1 ELSE 0 END) AS drivers_on_trip,
-        SUM(CASE WHEN d.status = 'offline'   AND u.is_active = 1 THEN 1 ELSE 0 END) AS drivers_offline
-     FROM drivers d JOIN users u ON d.user_id = u.id"
-);
-
-// ── Drivers list for assign modal ────────────────────────────────
-$allDrivers = dbFetchAll(
-    "SELECT d.id, d.status, d.rating,
+// ── Available Drivers (for assignment panel) ──
+$availableDrivers = dbFetchAll(
+    "SELECT d.id, d.status, d.availability, d.total_trips, d.rating,
             u.first_name, u.last_name, u.phone,
-            v.name AS vehicle_name, v.plate_number, v.type AS vtype, v.capacity
+            v.name as vehicle_name, v.type as vehicle_type, v.plate_number, v.capacity
      FROM drivers d
      JOIN users u ON d.user_id = u.id
      LEFT JOIN vehicles v ON d.vehicle_id = v.id
      WHERE u.is_active = 1
-     ORDER BY FIELD(d.status,'available','on_trip','offline'), u.first_name"
+     ORDER BY
+        FIELD(d.availability, 'available','unavailable','off_duty'),
+        d.status ASC, u.first_name ASC"
 );
 
-// ── Recent activity log ──────────────────────────────────────────
-$activityLog = dbFetchAll(
-    "SELECT dal.*, u.first_name, u.last_name, b.booking_ref
-     FROM dispatcher_action_logs dal
-     LEFT JOIN users u    ON dal.dispatcher_id = u.id
-     LEFT JOIN bookings b ON dal.booking_id    = b.id
-     ORDER BY dal.created_at DESC
-     LIMIT 30"
+// ── All Drivers (for filter dropdown) ──
+$allDrivers = dbFetchAll(
+    "SELECT d.id, u.first_name, u.last_name FROM drivers d JOIN users u ON d.user_id = u.id ORDER BY u.first_name"
 );
 
-// ── Group bookings by status ─────────────────────────────────────
+// ── Group bookings by status ──
+$statusGroups = [
+    'unassigned' => ['label' => 'Unassigned', 'icon' => 'fa-exclamation-circle', 'color' => '#ef4444', 'statuses' => ['pending','confirmed']],
+    'assigned'   => ['label' => 'Assigned',   'icon' => 'fa-user-check',         'color' => '#8b5cf6', 'statuses' => ['assigned','accepted']],
+    'on_the_way' => ['label' => 'On the Way', 'icon' => 'fa-car-side',           'color' => '#3b82f6', 'statuses' => ['on_the_way']],
+    'arrived'    => ['label' => 'Arrived',     'icon' => 'fa-map-marker-alt',     'color' => '#06b6d4', 'statuses' => ['arrived']],
+    'in_progress'=> ['label' => 'In Progress', 'icon' => 'fa-road',              'color' => '#10b981', 'statuses' => ['trip_started','in_progress']],
+    'completed'  => ['label' => 'Completed',   'icon' => 'fa-check-circle',       'color' => '#059669', 'statuses' => ['completed']],
+    'cancelled'  => ['label' => 'Cancelled',   'icon' => 'fa-times-circle',       'color' => '#6b7280', 'statuses' => ['cancelled','no_show','declined']],
+];
+
 $grouped = [];
-foreach ($DISPATCH_STATUSES as $s => $meta) {
-    $grouped[$s] = [];
-}
-foreach ($bookings as $b) {
-    $s = $b['status'];
-    if (!isset($grouped[$s])) $grouped[$s] = [];
-    $grouped[$s][] = $b;
-}
-
-// ── Helpers ──────────────────────────────────────────────────────
-$statusLabel = function(string $s) use ($DISPATCH_STATUSES): string {
-    return $DISPATCH_STATUSES[$s]['label'] ?? ucfirst(str_replace('_', ' ', $s));
-};
-$statusColor = function(string $s) use ($DISPATCH_STATUSES): string {
-    return $DISPATCH_STATUSES[$s]['color'] ?? '#6b7280';
-};
-$statusBg = function(string $s) use ($DISPATCH_STATUSES): string {
-    return $DISPATCH_STATUSES[$s]['bg'] ?? '#f9fafb';
-};
-
-function waLink(string $phone, string $name, string $ref): string {
-    $clean = preg_replace('/[^0-9]/', '', $phone);
-    if (strlen($clean) === 10) $clean = '1' . $clean;
-    $msg = urlencode("Hi $name, this is Travelr Taxi regarding booking $ref.");
-    return "https://wa.me/{$clean}?text={$msg}";
+foreach ($statusGroups as $key => $group) {
+    $grouped[$key] = array_filter($bookings, function($b) use ($group) {
+        return in_array($b['status'], $group['statuses']);
+    });
 }
 ?>
 
-<!-- Dispatch Top Bar -->
-<div class="dispatch-topbar">
-    <div class="dispatch-topbar-left">
-        <h1 class="dispatch-title"><i class="fas fa-broadcast-tower"></i> Dispatch Console</h1>
-        <span class="dispatch-live" id="liveIndicator"><span class="live-dot"></span> LIVE</span>
-    </div>
-    <div class="dispatch-topbar-right">
-        <span class="dispatch-clock" id="dispatchClock"></span>
-        <button class="btn btn-sm btn-outline" id="refreshBtn" onclick="location.reload()">
-            <i class="fas fa-sync-alt"></i> Refresh
-        </button>
-        <span class="dispatch-autorefresh" id="autoRefreshLabel">Auto-refresh: <strong id="countdown">60</strong>s</span>
-    </div>
-</div>
+<!-- Dispatch-specific CSS -->
+<link rel="stylesheet" href="/assets/css/dispatch.css">
 
-<!-- Operational Widgets -->
-<div class="dispatch-widgets">
-    <div class="dw-card dw-active">
-        <div class="dw-icon"><i class="fas fa-car-side"></i></div>
-        <div class="dw-info">
-            <div class="dw-value"><?php echo (int)($widgets['active_trips'] ?? 0); ?></div>
-            <div class="dw-label">Active Trips</div>
-        </div>
-    </div>
-    <div class="dw-card dw-unassigned">
-        <div class="dw-icon"><i class="fas fa-exclamation-circle"></i></div>
-        <div class="dw-info">
-            <div class="dw-value"><?php echo (int)($widgets['unassigned'] ?? 0); ?></div>
-            <div class="dw-label">Unassigned</div>
-        </div>
-    </div>
-    <div class="dw-card dw-available">
-        <div class="dw-icon"><i class="fas fa-user-check"></i></div>
-        <div class="dw-info">
-            <div class="dw-value"><?php echo (int)($driverStats['available_drivers'] ?? 0); ?></div>
-            <div class="dw-label">Available Drivers</div>
-        </div>
-    </div>
-    <div class="dw-card dw-on-trip">
-        <div class="dw-icon"><i class="fas fa-road"></i></div>
-        <div class="dw-info">
-            <div class="dw-value"><?php echo (int)($driverStats['drivers_on_trip'] ?? 0); ?></div>
-            <div class="dw-label">Drivers on Trip</div>
-        </div>
-    </div>
-    <div class="dw-card dw-completed">
-        <div class="dw-icon"><i class="fas fa-flag-checkered"></i></div>
-        <div class="dw-info">
-            <div class="dw-value"><?php echo (int)($widgets['completed_today'] ?? 0); ?></div>
-            <div class="dw-label">Completed Today</div>
-        </div>
-    </div>
-    <div class="dw-card dw-revenue">
-        <div class="dw-icon"><i class="fas fa-dollar-sign"></i></div>
-        <div class="dw-info">
-            <div class="dw-value"><?php echo formatPrice($widgets['revenue_today'] ?? 0); ?></div>
-            <div class="dw-label">Revenue Today</div>
+<div class="dispatch-header">
+    <div class="dispatch-title-row">
+        <h1 class="page-title"><i class="fas fa-satellite-dish"></i> Dispatch Command Center</h1>
+        <div class="dispatch-actions-top">
+            <button onclick="location.reload()" class="btn btn-sm btn-outline" title="Refresh"><i class="fas fa-sync-alt"></i> Refresh</button>
+            <span class="dispatch-time" id="dispatchClock"></span>
         </div>
     </div>
 </div>
 
-<!-- Filter Bar -->
-<form method="GET" action="/admin/dispatch.php" id="filterForm" class="dispatch-filters">
-    <div class="df-row">
-        <!-- Quick date -->
-        <div class="df-group">
-            <label>Date Range</label>
-            <div class="df-btns">
-                <?php foreach (['today' => 'Today', 'upcoming' => 'Upcoming', 'all' => 'All Dates', 'custom' => 'Custom'] as $v => $l): ?>
-                <button type="submit" name="date" value="<?php echo $v; ?>"
-                    class="df-btn <?php echo $filterDate === $v ? 'active' : ''; ?>"
-                    onclick="syncFilter('date','<?php echo $v; ?>')"
-                ><?php echo $l; ?></button>
-                <?php endforeach; ?>
-            </div>
-        </div>
-        <!-- Custom date range -->
-        <div class="df-group df-custom-date <?php echo $filterDate === 'custom' ? '' : 'hidden'; ?>" id="customDateGroup">
-            <label>From</label>
-            <input type="date" name="from" value="<?php echo $filterDateFrom; ?>" class="df-input">
-            <label>To</label>
-            <input type="date" name="to"   value="<?php echo $filterDateTo; ?>"   class="df-input">
-        </div>
-        <!-- Status -->
-        <div class="df-group">
-            <label>Status</label>
-            <div class="df-btns">
-                <?php foreach (['active' => 'Active', 'unassigned' => 'Unassigned', 'completed' => 'Completed', 'cancelled' => 'Cancelled', 'all' => 'All'] as $v => $l): ?>
-                <button type="submit" name="status" value="<?php echo $v; ?>"
-                    class="df-btn <?php echo $filterStatus === $v ? 'active' : ''; ?>"
-                    onclick="syncFilter('status','<?php echo $v; ?>')"
-                ><?php echo $l; ?></button>
-                <?php endforeach; ?>
-            </div>
+<!-- ── Stats Strip ── -->
+<div class="dispatch-stats">
+    <div class="dstat dstat-active">
+        <div class="dstat-icon"><i class="fas fa-bolt"></i></div>
+        <div class="dstat-info">
+            <div class="dstat-number"><?= $statsActive ?></div>
+            <div class="dstat-label">Active Trips</div>
         </div>
     </div>
-    <div class="df-row df-row2">
-        <!-- Driver filter -->
-        <div class="df-group">
-            <label>Driver</label>
-            <select name="driver" class="df-select" onchange="this.form.submit()">
-                <option value="">All Drivers</option>
+    <div class="dstat dstat-unassigned">
+        <div class="dstat-icon"><i class="fas fa-exclamation-triangle"></i></div>
+        <div class="dstat-info">
+            <div class="dstat-number"><?= $statsUnassigned ?></div>
+            <div class="dstat-label">Unassigned</div>
+        </div>
+    </div>
+    <div class="dstat dstat-drivers">
+        <div class="dstat-icon"><i class="fas fa-user-check"></i></div>
+        <div class="dstat-info">
+            <div class="dstat-number"><?= $statsAvailableDrivers ?></div>
+            <div class="dstat-label">Available Drivers</div>
+        </div>
+    </div>
+    <div class="dstat dstat-revenue">
+        <div class="dstat-icon"><i class="fas fa-dollar-sign"></i></div>
+        <div class="dstat-info">
+            <div class="dstat-number"><?= formatPrice($statsRevenueToday) ?></div>
+            <div class="dstat-label">Revenue Today</div>
+        </div>
+    </div>
+    <div class="dstat dstat-today">
+        <div class="dstat-icon"><i class="fas fa-calendar-day"></i></div>
+        <div class="dstat-info">
+            <div class="dstat-number"><?= $statsTodayBookings ?></div>
+            <div class="dstat-label">Today's Bookings</div>
+        </div>
+    </div>
+    <div class="dstat dstat-completed">
+        <div class="dstat-icon"><i class="fas fa-flag-checkered"></i></div>
+        <div class="dstat-info">
+            <div class="dstat-number"><?= $statsCompletedToday ?></div>
+            <div class="dstat-label">Completed Today</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Filters Bar ── -->
+<div class="dispatch-filters">
+    <div class="filter-group">
+        <a href="?filter=today" class="dbtn <?= $filter === 'today' ? 'dbtn-active' : '' ?>"><i class="fas fa-calendar-day"></i> Today</a>
+        <a href="?filter=active" class="dbtn <?= $filter === 'active' ? 'dbtn-active' : '' ?>"><i class="fas fa-bolt"></i> Active</a>
+        <a href="?filter=unassigned" class="dbtn <?= $filter === 'unassigned' ? 'dbtn-active' : '' ?>"><i class="fas fa-exclamation-circle"></i> Unassigned</a>
+        <a href="?filter=completed" class="dbtn <?= $filter === 'completed' ? 'dbtn-active' : '' ?>"><i class="fas fa-check-circle"></i> Completed</a>
+        <a href="?filter=cancelled" class="dbtn <?= $filter === 'cancelled' ? 'dbtn-active' : '' ?>"><i class="fas fa-times-circle"></i> Cancelled</a>
+        <a href="?filter=all" class="dbtn <?= $filter === 'all' ? 'dbtn-active' : '' ?>"><i class="fas fa-list"></i> All</a>
+    </div>
+    <div class="filter-group">
+        <form method="GET" class="dispatch-filter-form">
+            <input type="hidden" name="filter" value="<?= $filter ?>">
+            <select name="driver" onchange="this.form.submit()" class="dselect">
+                <option value="0">All Drivers</option>
                 <?php foreach ($allDrivers as $d): ?>
-                <option value="<?php echo $d['id']; ?>" <?php echo $filterDriver === $d['id'] ? 'selected' : ''; ?>>
-                    <?php echo sanitize($d['first_name'] . ' ' . $d['last_name']); ?>
-                    (<?php echo ucfirst($d['status']); ?>)
-                </option>
+                <option value="<?= $d['id'] ?>" <?= $driverFilter == $d['id'] ? 'selected' : '' ?>><?= sanitize($d['first_name'] . ' ' . $d['last_name']) ?></option>
                 <?php endforeach; ?>
             </select>
-        </div>
-        <!-- Vehicle type -->
-        <div class="df-group">
-            <label>Vehicle Type</label>
-            <select name="vehicle" class="df-select" onchange="this.form.submit()">
-                <option value="">All Types</option>
-                <?php foreach (['sedan' => 'Sedan', 'van' => 'Van', 'minibus' => 'Minibus'] as $v => $l): ?>
-                <option value="<?php echo $v; ?>" <?php echo $filterVehicle === $v ? 'selected' : ''; ?>><?php echo $l; ?></option>
-                <?php endforeach; ?>
+            <select name="vehicle" onchange="this.form.submit()" class="dselect">
+                <option value="">All Vehicles</option>
+                <option value="sedan" <?= $vehicleFilter === 'sedan' ? 'selected' : '' ?>>Sedan</option>
+                <option value="van" <?= $vehicleFilter === 'van' ? 'selected' : '' ?>>Van</option>
+                <option value="minibus" <?= $vehicleFilter === 'minibus' ? 'selected' : '' ?>>Minibus</option>
             </select>
-        </div>
-        <!-- Service type -->
-        <div class="df-group">
-            <label>Service</label>
-            <select name="service" class="df-select" onchange="this.form.submit()">
-                <option value="">All Services</option>
-                <?php foreach (['standard' => 'Standard', 'airport' => 'Airport', 'tour' => 'Tour', 'hourly' => 'Hourly'] as $v => $l): ?>
-                <option value="<?php echo $v; ?>" <?php echo $filterService === $v ? 'selected' : ''; ?>><?php echo $l; ?></option>
+        </form>
+        <form method="GET" class="dispatch-search-form">
+            <input type="hidden" name="filter" value="<?= $filter ?>">
+            <input type="text" name="q" value="<?= $searchQuery ?>" placeholder="Search ref, name, phone, location..." class="dsearch">
+            <button type="submit" class="dbtn dbtn-search"><i class="fas fa-search"></i></button>
+        </form>
+    </div>
+</div>
+
+<!-- ── Main Dispatch Grid ── -->
+<div class="dispatch-layout">
+
+    <!-- Left: Booking Columns -->
+    <div class="dispatch-board">
+        <?php foreach ($statusGroups as $key => $group):
+            $items = $grouped[$key];
+            $count = count($items);
+            if ($count === 0 && in_array($key, ['completed','cancelled']) && $filter !== 'all' && $filter !== 'completed' && $filter !== 'cancelled') continue;
+        ?>
+        <div class="dispatch-column" data-status="<?= $key ?>">
+            <div class="dcol-header" style="border-color: <?= $group['color'] ?>">
+                <span class="dcol-title"><i class="fas <?= $group['icon'] ?>" style="color:<?= $group['color'] ?>"></i> <?= $group['label'] ?></span>
+                <span class="dcol-count" style="background:<?= $group['color'] ?>"><?= $count ?></span>
+            </div>
+            <div class="dcol-body">
+                <?php if ($count === 0): ?>
+                <div class="dcol-empty">No bookings</div>
+                <?php else: ?>
+                <?php foreach ($items as $b): ?>
+                <div class="dispatch-card dcard-<?= $b['status'] ?>" data-booking-id="<?= $b['id'] ?>">
+                    <!-- Card Header -->
+                    <div class="dcard-top">
+                        <span class="dcard-ref"><?= sanitize($b['booking_ref']) ?></span>
+                        <?= statusBadge($b['status']) ?>
+                    </div>
+
+                    <!-- Customer -->
+                    <div class="dcard-customer">
+                        <strong><?= sanitize($b['customer_name']) ?></strong>
+                        <div class="dcard-contact">
+                            <a href="tel:<?= sanitize($b['customer_phone']) ?>" class="dcard-btn-mini" title="Call Customer"><i class="fas fa-phone"></i></a>
+                            <a href="https://wa.me/1<?= preg_replace('/[^0-9]/', '', $b['customer_phone']) ?>" target="_blank" class="dcard-btn-mini dcard-btn-wa" title="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+                        </div>
+                    </div>
+
+                    <!-- Route -->
+                    <div class="dcard-route">
+                        <div class="dcard-route-point"><i class="fas fa-circle dcard-pickup-dot"></i> <?= sanitize(mb_strimwidth($b['pickup_location'], 0, 40, '...')) ?></div>
+                        <div class="dcard-route-point"><i class="fas fa-map-marker-alt dcard-dropoff-dot"></i> <?= sanitize(mb_strimwidth($b['dropoff_location'], 0, 40, '...')) ?></div>
+                    </div>
+
+                    <!-- Meta -->
+                    <div class="dcard-meta">
+                        <span><i class="far fa-calendar"></i> <?= formatDate($b['booking_date']) ?></span>
+                        <span><i class="far fa-clock"></i> <?= formatTime($b['booking_time']) ?></span>
+                        <span><i class="fas fa-users"></i> <?= $b['passengers'] ?></span>
+                        <span class="dcard-fare"><?= $b['estimated_price'] > 0 ? formatPrice($b['estimated_price']) : '-' ?></span>
+                    </div>
+                    <div class="dcard-meta">
+                        <span><i class="fas fa-concierge-bell"></i> <?= ucfirst($b['service_type']) ?></span>
+                        <span><i class="fas fa-car"></i> <?= ucfirst($b['vehicle_type']) ?></span>
+                    </div>
+
+                    <!-- Driver Info -->
+                    <?php if ($b['driver_first']): ?>
+                    <div class="dcard-driver">
+                        <i class="fas fa-id-badge"></i>
+                        <span><?= sanitize($b['driver_first'] . ' ' . $b['driver_last']) ?></span>
+                        <?php if ($b['vehicle_name']): ?>
+                        <span class="dcard-vehicle"><?= sanitize($b['vehicle_name']) ?> (<?= sanitize($b['plate_number'] ?? '') ?>)</span>
+                        <?php endif; ?>
+                        <div class="dcard-driver-actions">
+                            <a href="tel:<?= sanitize($b['driver_phone']) ?>" class="dcard-btn-mini" title="Call Driver"><i class="fas fa-phone"></i></a>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- Dispatcher Notes Preview -->
+                    <?php if ($b['dispatcher_notes']): ?>
+                    <div class="dcard-note-preview"><i class="fas fa-sticky-note"></i> <?= sanitize(mb_strimwidth($b['dispatcher_notes'], 0, 60, '...')) ?></div>
+                    <?php endif; ?>
+
+                    <!-- Quick Actions -->
+                    <div class="dcard-actions">
+                        <?php if (!$b['driver_id'] || in_array($b['status'], ['pending','confirmed'])): ?>
+                        <button class="dbtn dbtn-assign" onclick="openAssignModal(<?= $b['id'] ?>, '<?= sanitize($b['booking_ref']) ?>', '<?= sanitize($b['customer_name']) ?>', '<?= sanitize($b['vehicle_type']) ?>')"><i class="fas fa-user-plus"></i> Assign</button>
+                        <?php elseif (in_array($b['status'], ['assigned','accepted'])): ?>
+                        <button class="dbtn dbtn-reassign" onclick="openAssignModal(<?= $b['id'] ?>, '<?= sanitize($b['booking_ref']) ?>', '<?= sanitize($b['customer_name']) ?>', '<?= sanitize($b['vehicle_type']) ?>', <?= $b['driver_id'] ?>)"><i class="fas fa-exchange-alt"></i> Reassign</button>
+                        <?php endif; ?>
+                        <button class="dbtn dbtn-status" onclick="openStatusModal(<?= $b['id'] ?>, '<?= sanitize($b['booking_ref']) ?>', '<?= $b['status'] ?>')"><i class="fas fa-sync-alt"></i> Status</button>
+                        <button class="dbtn dbtn-note" onclick="openNoteModal(<?= $b['id'] ?>, '<?= sanitize($b['booking_ref']) ?>')"><i class="fas fa-sticky-note"></i> Note</button>
+                        <a href="/admin/booking-detail.php?id=<?= $b['id'] ?>" class="dbtn dbtn-detail"><i class="fas fa-expand"></i></a>
+                    </div>
+                </div>
                 <?php endforeach; ?>
-            </select>
-        </div>
-        <!-- Search -->
-        <div class="df-group df-search">
-            <label>Search</label>
-            <div class="df-search-wrap">
-                <input type="text" name="search" value="<?php echo $filterSearch; ?>"
-                    placeholder="Ref, name, phone, location…" class="df-input df-search-input">
-                <button type="submit" class="df-search-btn"><i class="fas fa-search"></i></button>
-                <?php if ($filterSearch): ?>
-                <a href="?" class="df-clear-btn" title="Clear search"><i class="fas fa-times"></i></a>
                 <?php endif; ?>
             </div>
         </div>
-        <!-- Hidden fields to preserve other filters -->
-        <input type="hidden" name="date"    id="h_date"    value="<?php echo $filterDate; ?>">
-        <input type="hidden" name="status"  id="h_status"  value="<?php echo $filterStatus; ?>">
-    </div>
-</form>
-
-<!-- Results summary -->
-<div class="dispatch-summary">
-    <span class="ds-count"><strong><?php echo count($bookings); ?></strong> booking<?php echo count($bookings) !== 1 ? 's' : ''; ?> shown</span>
-    <div class="ds-legend">
-        <?php foreach ($DISPATCH_STATUSES as $s => $meta): ?>
-        <?php $cnt = count($grouped[$s]); if (!$cnt) continue; ?>
-        <span class="ds-badge" style="background:<?php echo $meta['color']; ?>">
-            <?php echo $meta['label']; ?> <strong><?php echo $cnt; ?></strong>
-        </span>
         <?php endforeach; ?>
     </div>
-</div>
 
-<!-- ── Dispatch Board ──────────────────────────────────────────── -->
-<?php if (empty($bookings)): ?>
-<div class="dispatch-empty">
-    <i class="fas fa-inbox"></i>
-    <p>No bookings match the current filters.</p>
-    <a href="/admin/dispatch.php" class="btn btn-outline">Clear Filters</a>
-</div>
-<?php else: ?>
-
-<?php foreach ($DISPATCH_STATUSES as $statusKey => $statusMeta):
-    $rows = $grouped[$statusKey];
-    if (empty($rows)) continue;
-?>
-<div class="dispatch-group" id="group-<?php echo $statusKey; ?>">
-    <div class="dg-header" onclick="toggleGroup('<?php echo $statusKey; ?>')">
-        <div class="dg-header-left">
-            <span class="dg-dot" style="background:<?php echo $statusMeta['color']; ?>"></span>
-            <span class="dg-title"><?php echo $statusMeta['label']; ?></span>
-            <span class="dg-count"><?php echo count($rows); ?></span>
+    <!-- Right: Available Drivers Panel -->
+    <div class="dispatch-drivers-panel">
+        <div class="dpanel-header">
+            <h3><i class="fas fa-users"></i> Drivers</h3>
+            <span class="dpanel-count"><?= count($availableDrivers) ?> total</span>
         </div>
-        <i class="fas fa-chevron-down dg-chevron" id="chev-<?php echo $statusKey; ?>"></i>
-    </div>
-
-    <div class="dg-body" id="body-<?php echo $statusKey; ?>">
-        <div class="table-responsive">
-        <table class="dispatch-table">
-            <thead>
-                <tr>
-                    <th style="width:110px">Booking Ref</th>
-                    <th>Customer</th>
-                    <th>Route</th>
-                    <th style="width:120px">Date / Time</th>
-                    <th style="width:80px">Service</th>
-                    <th style="width:60px">Pax</th>
-                    <th style="width:90px">Fare</th>
-                    <th>Driver / Vehicle</th>
-                    <th style="width:130px">Status</th>
-                    <th style="width:200px">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php foreach ($rows as $b):
-                $sc      = $statusColor($b['status']);
-                $drvName = ($b['drv_first'] ?? '') ? sanitize($b['drv_first'] . ' ' . $b['drv_last']) : null;
-                $fare    = $b['final_price'] ?? $b['estimated_price'] ?? 0;
-                $isToday = $b['booking_date'] === $today;
-                $isPast  = $b['booking_date'] < $today;
-            ?>
-            <tr class="dr-row <?php echo $isPast && !in_array($b['status'],['completed','cancelled','no_show']) ? 'dr-overdue' : ''; ?>"
-                style="border-left: 4px solid <?php echo $sc; ?>">
-                <td>
-                    <strong class="dr-ref"><?php echo sanitize($b['booking_ref']); ?></strong>
-                    <?php if ($b['note_count'] > 0): ?>
-                    <span class="dr-note-badge" title="<?php echo $b['note_count']; ?> note(s)">
-                        <i class="fas fa-sticky-note"></i><?php echo $b['note_count']; ?>
-                    </span>
-                    <?php endif; ?>
-                </td>
-                <td>
-                    <div class="dr-customer">
-                        <strong><?php echo sanitize($b['customer_name']); ?></strong>
-                        <div class="dr-contact-links">
-                            <a href="tel:<?php echo sanitize($b['customer_phone']); ?>" class="dr-contact-btn dr-call" title="Call">
-                                <i class="fas fa-phone"></i>
-                            </a>
-                            <a href="<?php echo waLink($b['customer_phone'], $b['customer_name'], $b['booking_ref']); ?>"
-                               target="_blank" class="dr-contact-btn dr-wa" title="WhatsApp">
-                                <i class="fab fa-whatsapp"></i>
-                            </a>
-                        </div>
-                        <small class="dr-phone"><?php echo sanitize($b['customer_phone']); ?></small>
-                    </div>
-                </td>
-                <td class="dr-route">
-                    <div class="dr-route-from"><i class="fas fa-map-marker-alt dr-icon-pickup"></i><?php echo sanitize(substr($b['pickup_location'], 0, 30)); ?><?php echo strlen($b['pickup_location']) > 30 ? '…' : ''; ?></div>
-                    <div class="dr-route-to"><i class="fas fa-flag-checkered dr-icon-drop"></i><?php echo sanitize(substr($b['dropoff_location'], 0, 30)); ?><?php echo strlen($b['dropoff_location']) > 30 ? '…' : ''; ?></div>
-                </td>
-                <td>
-                    <div class="dr-datetime">
-                        <span class="dr-date <?php echo $isToday ? 'dr-today' : ($isPast ? 'dr-past' : ''); ?>">
-                            <?php echo $isToday ? 'TODAY' : formatDate($b['booking_date']); ?>
-                        </span>
-                        <span class="dr-time"><?php echo formatTime($b['booking_time']); ?></span>
-                    </div>
-                </td>
-                <td>
-                    <span class="dr-service dr-service-<?php echo $b['service_type']; ?>">
-                        <?php echo ucfirst($b['service_type']); ?>
-                    </span>
-                    <div><small class="dr-vtype"><?php echo ucfirst($b['vehicle_type']); ?></small></div>
-                </td>
-                <td class="dr-pax"><i class="fas fa-user"></i> <?php echo $b['passengers']; ?></td>
-                <td class="dr-fare">
-                    <?php echo $fare > 0 ? '<strong>' . formatPrice($fare) . '</strong>' : '<span class="text-muted">TBD</span>'; ?>
-                    <?php if ($b['final_price'] && $b['estimated_price'] && $b['final_price'] != $b['estimated_price']): ?>
-                    <div><small class="dr-est">(est. <?php echo formatPrice($b['estimated_price']); ?>)</small></div>
-                    <?php endif; ?>
-                </td>
-                <td class="dr-driver">
-                    <?php if ($drvName): ?>
-                    <div class="dr-driver-assigned">
-                        <i class="fas fa-id-badge dr-icon-driver"></i>
-                        <div>
-                            <strong><?php echo $drvName; ?></strong>
-                            <?php if ($b['drv_phone']): ?>
-                            <div class="dr-contact-links">
-                                <a href="tel:<?php echo sanitize($b['drv_phone']); ?>" class="dr-contact-btn dr-call" title="Call Driver"><i class="fas fa-phone"></i></a>
-                                <a href="<?php echo waLink($b['drv_phone'], $drvName, $b['booking_ref']); ?>" target="_blank" class="dr-contact-btn dr-wa" title="WhatsApp Driver"><i class="fab fa-whatsapp"></i></a>
-                            </div>
+        <div class="dpanel-body">
+            <?php foreach ($availableDrivers as $drv): ?>
+            <div class="driver-row driver-<?= $drv['availability'] ?>">
+                <div class="driver-row-left">
+                    <div class="driver-avail-dot avail-<?= $drv['availability'] ?>"></div>
+                    <div class="driver-row-info">
+                        <strong><?= sanitize($drv['first_name'] . ' ' . $drv['last_name']) ?></strong>
+                        <span class="driver-row-meta">
+                            <?php if ($drv['vehicle_name']): ?>
+                            <?= sanitize($drv['vehicle_name']) ?> &middot; <?= ucfirst($drv['vehicle_type']) ?> &middot; <?= $drv['capacity'] ?> seats
+                            <?php else: ?>
+                            No vehicle
                             <?php endif; ?>
-                        </div>
+                        </span>
+                        <span class="driver-row-stats">
+                            <i class="fas fa-star" style="color:#f59e0b"></i> <?= number_format($drv['rating'], 1) ?>
+                            &middot; <?= $drv['total_trips'] ?> trips
+                        </span>
                     </div>
-                    <?php if ($b['vehicle_name']): ?>
-                    <small class="dr-vehicle"><?php echo sanitize($b['vehicle_name']); ?> · <?php echo sanitize($b['plate_number'] ?? ''); ?></small>
-                    <?php endif; ?>
-                    <?php else: ?>
-                    <span class="dr-unassigned"><i class="fas fa-question-circle"></i> Unassigned</span>
-                    <?php endif; ?>
-                </td>
-                <td>
-                    <span class="dr-status-badge" style="background:<?php echo $sc; ?>">
-                        <?php echo $statusLabel($b['status']); ?>
-                    </span>
-                </td>
-                <td class="dr-actions">
-                    <!-- Assign / Reassign -->
-                    <button class="da-btn da-assign" title="<?php echo $drvName ? 'Reassign Driver' : 'Assign Driver'; ?>"
-                        onclick="openAssignModal(<?php echo $b['id']; ?>, '<?php echo sanitize($b['booking_ref']); ?>', <?php echo $b['driver_id'] ? $b['driver_id'] : 'null'; ?>)">
-                        <i class="fas fa-user-plus"></i>
-                    </button>
-                    <!-- Update Status -->
-                    <button class="da-btn da-status" title="Update Status"
-                        onclick="openStatusModal(<?php echo $b['id']; ?>, '<?php echo sanitize($b['booking_ref']); ?>', '<?php echo $b['status']; ?>')">
-                        <i class="fas fa-exchange-alt"></i>
-                    </button>
-                    <!-- Notes -->
-                    <button class="da-btn da-notes <?php echo $b['note_count'] > 0 ? 'da-has-notes' : ''; ?>" title="Dispatcher Notes (<?php echo $b['note_count']; ?>)"
-                        onclick="openNotesModal(<?php echo $b['id']; ?>, '<?php echo sanitize($b['booking_ref']); ?>')">
-                        <i class="fas fa-sticky-note"></i>
-                    </button>
-                    <!-- View full detail -->
-                    <a href="/admin/booking-detail.php?id=<?php echo $b['id']; ?>" class="da-btn da-view" title="View Full Detail" target="_blank">
-                        <i class="fas fa-external-link-alt"></i>
-                    </a>
-                </td>
-            </tr>
+                </div>
+                <div class="driver-row-right">
+                    <span class="driver-status-tag tag-<?= $drv['availability'] ?>"><?= ucfirst(str_replace('_', ' ', $drv['availability'])) ?></span>
+                    <a href="tel:<?= sanitize($drv['phone']) ?>" class="dcard-btn-mini" title="Call"><i class="fas fa-phone"></i></a>
+                </div>
+            </div>
             <?php endforeach; ?>
-            </tbody>
-        </table>
         </div>
     </div>
-</div>
-<?php endforeach; ?>
-<?php endif; ?>
-
-<!-- ── Activity Log ──────────────────────────────────────────── -->
-<div class="dispatch-section-header" style="margin-top:30px">
-    <h2><i class="fas fa-history"></i> Dispatch Activity Log</h2>
-    <span class="ds-count">Last 30 actions</span>
-</div>
-<div class="admin-card" style="padding:0;overflow:hidden">
-    <?php if (empty($activityLog)): ?>
-    <p style="padding:20px;color:#666;text-align:center">No dispatch activity recorded yet.</p>
-    <?php else: ?>
-    <table class="dispatch-log-table">
-        <thead>
-            <tr>
-                <th style="width:160px">Time</th>
-                <th style="width:130px">Dispatcher</th>
-                <th style="width:110px">Booking</th>
-                <th style="width:120px">Action</th>
-                <th>Description</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($activityLog as $log):
-            $actionColors = [
-                'assigned'             => '#8b5cf6',
-                'reassigned'           => '#f97316',
-                'status_changed'       => '#3b82f6',
-                'note_added'           => '#10b981',
-                'driver_status_changed'=> '#06b6d4',
-            ];
-            $ac = $actionColors[$log['action_type']] ?? '#6b7280';
-        ?>
-        <tr>
-            <td class="log-time"><?php echo date('M d, g:i A', strtotime($log['created_at'])); ?></td>
-            <td><?php echo $log['first_name'] ? sanitize($log['first_name'] . ' ' . $log['last_name']) : '<em>System</em>'; ?></td>
-            <td>
-                <?php if ($log['booking_ref']): ?>
-                <a href="/admin/booking-detail.php?id=<?php echo $log['booking_id']; ?>" class="log-ref"><?php echo sanitize($log['booking_ref']); ?></a>
-                <?php else: ?>—<?php endif; ?>
-            </td>
-            <td><span class="log-action-badge" style="background:<?php echo $ac; ?>"><?php echo ucfirst(str_replace('_', ' ', $log['action_type'])); ?></span></td>
-            <td class="log-desc"><?php echo sanitize($log['description'] ?? ''); ?></td>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-    <?php endif; ?>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
      MODALS
-     ═══════════════════════════════════════════════════════ -->
+     ═══════════════════════════════════════════════════════════ -->
 
-<!-- Assign Driver Modal -->
-<div class="dispatch-modal" id="assignModal" role="dialog" aria-modal="true">
-    <div class="dm-backdrop" onclick="closeModal('assignModal')"></div>
-    <div class="dm-panel dm-panel-lg">
-        <div class="dm-header">
-            <h3 id="assignModalTitle"><i class="fas fa-user-plus"></i> Assign Driver</h3>
-            <button class="dm-close" onclick="closeModal('assignModal')">&times;</button>
+<!-- Assign / Reassign Driver Modal -->
+<div class="dispatch-modal" id="assignModal">
+    <div class="dmodal-overlay" onclick="closeModal('assignModal')"></div>
+    <div class="dmodal-content">
+        <div class="dmodal-header">
+            <h3><i class="fas fa-user-plus"></i> <span id="assignModalTitle">Assign Driver</span></h3>
+            <button onclick="closeModal('assignModal')" class="dmodal-close">&times;</button>
         </div>
-        <div class="dm-body">
-            <p class="dm-booking-ref">Booking: <strong id="assignBookingRef"></strong></p>
-            <input type="text" id="driverSearch" class="df-input" placeholder="Search driver name or plate…" oninput="filterDriverList(this.value)" style="margin-bottom:12px;width:100%">
-            <div id="driverList" class="driver-list">
-                <?php foreach ($allDrivers as $d):
-                    $statusClr = $d['status'] === 'available' ? '#10b981' : ($d['status'] === 'on_trip' ? '#3b82f6' : '#6b7280');
-                ?>
-                <div class="dl-item" data-search="<?php echo strtolower(sanitize($d['first_name'] . ' ' . $d['last_name'] . ' ' . ($d['plate_number'] ?? ''))); ?>">
-                    <div class="dl-info">
-                        <div class="dl-name">
-                            <strong><?php echo sanitize($d['first_name'] . ' ' . $d['last_name']); ?></strong>
-                            <span class="dl-status-dot" style="background:<?php echo $statusClr; ?>" title="<?php echo ucfirst($d['status']); ?>"></span>
-                            <span class="dl-status-text"><?php echo ucfirst(str_replace('_', ' ', $d['status'])); ?></span>
-                        </div>
-                        <div class="dl-vehicle">
-                            <?php if ($d['vehicle_name']): ?>
-                            <i class="fas fa-car"></i> <?php echo sanitize($d['vehicle_name']); ?>
-                            &nbsp;·&nbsp; <?php echo sanitize($d['plate_number'] ?? ''); ?>
-                            &nbsp;·&nbsp; Cap: <?php echo $d['capacity'] ?? '—'; ?>
-                            <?php else: ?><em>No vehicle assigned</em><?php endif; ?>
-                        </div>
-                        <div class="dl-rating"><i class="fas fa-star" style="color:#FFD400"></i> <?php echo number_format($d['rating'] ?? 5, 1); ?></div>
-                    </div>
-                    <button class="btn btn-sm btn-primary dl-select-btn"
-                        onclick="selectDriver(<?php echo $d['id']; ?>, '<?php echo sanitize($d['first_name'] . ' ' . $d['last_name']); ?>')">
-                        Select
-                    </button>
+        <div class="dmodal-body">
+            <div class="dmodal-booking-info" id="assignBookingInfo"></div>
+            <form id="assignForm" onsubmit="return submitAssign(event)">
+                <input type="hidden" name="booking_id" id="assignBookingId">
+                <input type="hidden" name="old_driver_id" id="assignOldDriverId" value="">
+                <div class="form-group">
+                    <label><i class="fas fa-id-badge"></i> Select Driver</label>
+                    <select name="driver_id" id="assignDriverSelect" class="dmodal-select" required>
+                        <option value="">-- Choose Driver --</option>
+                        <?php foreach ($availableDrivers as $drv): ?>
+                        <option value="<?= $drv['id'] ?>"
+                                data-vehicle="<?= $drv['vehicle_type'] ?>"
+                                data-avail="<?= $drv['availability'] ?>"
+                                data-status="<?= $drv['status'] ?>"
+                                <?= $drv['availability'] !== 'available' ? 'class="driver-unavailable-opt"' : '' ?>>
+                            <?= sanitize($drv['first_name'] . ' ' . $drv['last_name']) ?>
+                            — <?= ucfirst($drv['vehicle_type'] ?? 'no vehicle') ?>
+                            (<?= ucfirst($drv['availability']) ?>)
+                            <?= $drv['status'] === 'on_trip' ? ' [ON TRIP]' : '' ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-                <?php endforeach; ?>
-                <?php if (empty($allDrivers)): ?>
-                <p style="color:#666;padding:20px;text-align:center">No active drivers found.</p>
-                <?php endif; ?>
-            </div>
-            <div class="dm-note-group" style="margin-top:14px">
-                <label>Assignment Note (optional)</label>
-                <input type="text" id="assignNote" class="df-input" placeholder="e.g. Preferred driver requested by customer">
-            </div>
-        </div>
-        <div class="dm-footer">
-            <button class="btn btn-outline" onclick="closeModal('assignModal')">Cancel</button>
-            <button class="btn btn-primary" id="confirmAssignBtn" disabled onclick="confirmAssign()">
-                <i class="fas fa-check"></i> Confirm Assignment
-            </button>
+                <div class="form-group">
+                    <label><i class="fas fa-comment"></i> Reason / Notes (optional)</label>
+                    <input type="text" name="reason" placeholder="e.g. Closest driver, customer request..." class="dmodal-input">
+                </div>
+                <div class="dmodal-actions">
+                    <button type="button" onclick="closeModal('assignModal')" class="dbtn dbtn-cancel">Cancel</button>
+                    <button type="submit" class="dbtn dbtn-confirm" id="assignSubmitBtn"><i class="fas fa-check"></i> Assign Driver</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
 <!-- Update Status Modal -->
-<div class="dispatch-modal" id="statusModal" role="dialog" aria-modal="true">
-    <div class="dm-backdrop" onclick="closeModal('statusModal')"></div>
-    <div class="dm-panel">
-        <div class="dm-header">
-            <h3><i class="fas fa-exchange-alt"></i> Update Status</h3>
-            <button class="dm-close" onclick="closeModal('statusModal')">&times;</button>
+<div class="dispatch-modal" id="statusModal">
+    <div class="dmodal-overlay" onclick="closeModal('statusModal')"></div>
+    <div class="dmodal-content">
+        <div class="dmodal-header">
+            <h3><i class="fas fa-sync-alt"></i> Update Status</h3>
+            <button onclick="closeModal('statusModal')" class="dmodal-close">&times;</button>
         </div>
-        <div class="dm-body">
-            <p class="dm-booking-ref">Booking: <strong id="statusBookingRef"></strong></p>
-            <p>Current: <span id="currentStatusBadge"></span></p>
-            <div class="status-grid">
-                <?php foreach ($DISPATCH_STATUSES as $s => $meta): ?>
-                <button class="sg-btn" data-status="<?php echo $s; ?>"
-                    style="--sc:<?php echo $meta['color']; ?>"
-                    onclick="selectStatus('<?php echo $s; ?>')">
-                    <?php echo $meta['label']; ?>
-                </button>
-                <?php endforeach; ?>
-            </div>
-            <div class="dm-note-group" style="margin-top:14px">
-                <label>Status Note (optional)</label>
-                <input type="text" id="statusNote" class="df-input" placeholder="Reason or additional context…">
-            </div>
-        </div>
-        <div class="dm-footer">
-            <button class="btn btn-outline" onclick="closeModal('statusModal')">Cancel</button>
-            <button class="btn btn-primary" id="confirmStatusBtn" disabled onclick="confirmStatus()">
-                <i class="fas fa-check"></i> Update Status
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Notes Modal -->
-<div class="dispatch-modal" id="notesModal" role="dialog" aria-modal="true">
-    <div class="dm-backdrop" onclick="closeModal('notesModal')"></div>
-    <div class="dm-panel">
-        <div class="dm-header">
-            <h3><i class="fas fa-sticky-note"></i> Dispatcher Notes</h3>
-            <button class="dm-close" onclick="closeModal('notesModal')">&times;</button>
-        </div>
-        <div class="dm-body">
-            <p class="dm-booking-ref">Booking: <strong id="notesBookingRef"></strong></p>
-            <div id="notesList" class="notes-list"></div>
-            <div class="dm-note-group" style="margin-top:14px">
-                <label>Add Note</label>
-                <textarea id="newNote" class="df-textarea" rows="3" placeholder="Enter dispatcher note…"></textarea>
-            </div>
-        </div>
-        <div class="dm-footer">
-            <button class="btn btn-outline" onclick="closeModal('notesModal')">Close</button>
-            <button class="btn btn-primary" onclick="submitNote()">
-                <i class="fas fa-save"></i> Save Note
-            </button>
+        <div class="dmodal-body">
+            <div class="dmodal-booking-info" id="statusBookingInfo"></div>
+            <form id="statusForm" onsubmit="return submitStatus(event)">
+                <input type="hidden" name="booking_id" id="statusBookingId">
+                <input type="hidden" name="old_status" id="statusOldStatus">
+                <div class="form-group">
+                    <label><i class="fas fa-flag"></i> New Status</label>
+                    <select name="new_status" id="statusSelect" class="dmodal-select" required>
+                        <option value="">-- Select Status --</option>
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="assigned">Assigned</option>
+                        <option value="accepted">Accepted</option>
+                        <option value="on_the_way">On the Way</option>
+                        <option value="arrived">Arrived</option>
+                        <option value="trip_started">Trip Started</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="no_show">No Show</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-comment"></i> Notes (optional)</label>
+                    <input type="text" name="notes" placeholder="Reason for status change..." class="dmodal-input">
+                </div>
+                <div class="dmodal-actions">
+                    <button type="button" onclick="closeModal('statusModal')" class="dbtn dbtn-cancel">Cancel</button>
+                    <button type="submit" class="dbtn dbtn-confirm"><i class="fas fa-check"></i> Update Status</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- Toast notification -->
-<div id="dispatchToast" class="dispatch-toast" role="status" aria-live="polite"></div>
+<!-- Dispatcher Note Modal -->
+<div class="dispatch-modal" id="noteModal">
+    <div class="dmodal-overlay" onclick="closeModal('noteModal')"></div>
+    <div class="dmodal-content">
+        <div class="dmodal-header">
+            <h3><i class="fas fa-sticky-note"></i> Dispatcher Note</h3>
+            <button onclick="closeModal('noteModal')" class="dmodal-close">&times;</button>
+        </div>
+        <div class="dmodal-body">
+            <div class="dmodal-booking-info" id="noteBookingInfo"></div>
+            <div id="noteExistingNotes" class="dmodal-existing-notes"></div>
+            <form id="noteForm" onsubmit="return submitNote(event)">
+                <input type="hidden" name="booking_id" id="noteBookingId">
+                <div class="form-group">
+                    <label><i class="fas fa-pen"></i> Add Note</label>
+                    <textarea name="note" id="noteText" rows="3" placeholder="Type dispatcher note..." class="dmodal-textarea" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="dmodal-checkbox">
+                        <input type="checkbox" name="is_priority" value="1"> <i class="fas fa-exclamation-triangle" style="color:#f59e0b"></i> Mark as Priority
+                    </label>
+                </div>
+                <div class="dmodal-actions">
+                    <button type="button" onclick="closeModal('noteModal')" class="dbtn dbtn-cancel">Cancel</button>
+                    <button type="submit" class="dbtn dbtn-confirm"><i class="fas fa-plus"></i> Add Note</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
-<!-- ══ JavaScript ═══════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT
+     ═══════════════════════════════════════════════════════════ -->
 <script>
-// ── State ────────────────────────────────────────────────────
-var _assignBookingId  = null;
-var _assignSelectedId = null;
-var _statusBookingId  = null;
-var _selectedStatus   = null;
-var _notesBookingId   = null;
-var _countdown        = 60;
-var _cdInterval       = null;
-
-// ── Clock ───────────────────────────────────────────────────
+// ── Clock ──
 function updateClock() {
-    var now = new Date();
-    document.getElementById('dispatchClock').textContent =
-        now.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const el = document.getElementById('dispatchClock');
+    if (el) {
+        const now = new Date();
+        el.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
 }
-updateClock();
 setInterval(updateClock, 1000);
+updateClock();
 
-// ── Auto-refresh countdown ──────────────────────────────────
-function startCountdown() {
-    _countdown = 60;
-    _cdInterval = setInterval(function() {
-        _countdown--;
-        var el = document.getElementById('countdown');
-        if (el) el.textContent = _countdown;
-        if (_countdown <= 0) {
-            clearInterval(_cdInterval);
-            location.reload();
-        }
-    }, 1000);
-}
-startCountdown();
+// ── Auto-refresh every 60 seconds ──
+setTimeout(() => location.reload(), 60000);
 
-// ── Modal helpers ────────────────────────────────────────────
+// ── Modal Helpers ──
 function openModal(id) {
-    document.getElementById(id).classList.add('open');
+    document.getElementById(id).classList.add('dmodal-open');
     document.body.style.overflow = 'hidden';
 }
 function closeModal(id) {
-    document.getElementById(id).classList.remove('open');
+    document.getElementById(id).classList.remove('dmodal-open');
     document.body.style.overflow = '';
 }
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        ['assignModal','statusModal','notesModal'].forEach(closeModal);
-    }
-});
 
-// ── Toast ────────────────────────────────────────────────────
-function showToast(msg, type) {
-    var t = document.getElementById('dispatchToast');
-    t.textContent = msg;
-    t.className = 'dispatch-toast show dispatch-toast-' + (type || 'success');
-    setTimeout(function() { t.className = 'dispatch-toast'; }, 4000);
-}
-
-// ── Group collapse ───────────────────────────────────────────
-function toggleGroup(key) {
-    var body = document.getElementById('body-' + key);
-    var chev = document.getElementById('chev-' + key);
-    if (!body) return;
-    var open = body.style.display !== 'none';
-    body.style.display = open ? 'none' : '';
-    if (chev) chev.style.transform = open ? 'rotate(-90deg)' : '';
-}
-
-// ── Filter helpers ────────────────────────────────────────────
-function syncFilter(name, val) {
-    document.getElementById('h_' + name).value = val;
-    if (val === 'custom') {
-        document.getElementById('customDateGroup').classList.remove('hidden');
-    } else if (name === 'date') {
-        document.getElementById('customDateGroup').classList.add('hidden');
-    }
-}
-
-// ── ASSIGN MODAL ────────────────────────────────────────────
-function openAssignModal(bookingId, ref, currentDriverId) {
-    _assignBookingId  = bookingId;
-    _assignSelectedId = null;
-    document.getElementById('assignBookingRef').textContent = ref;
-    document.getElementById('assignNote').value = '';
-    document.getElementById('driverSearch').value = '';
-    document.getElementById('confirmAssignBtn').disabled = true;
-    // Reset selection highlight
-    document.querySelectorAll('.dl-item').forEach(function(el) {
-        el.classList.remove('dl-selected');
-    });
-    filterDriverList('');
+// ── Assign Modal ──
+function openAssignModal(bookingId, ref, customer, vehicleType, currentDriverId) {
+    document.getElementById('assignBookingId').value = bookingId;
+    document.getElementById('assignOldDriverId').value = currentDriverId || '';
+    document.getElementById('assignBookingInfo').innerHTML =
+        '<strong>' + ref + '</strong> — ' + customer + ' <span class="dcard-meta-tag">' + vehicleType + '</span>';
+    document.getElementById('assignModalTitle').textContent = currentDriverId ? 'Reassign Driver' : 'Assign Driver';
+    document.getElementById('assignSubmitBtn').innerHTML = currentDriverId
+        ? '<i class="fas fa-exchange-alt"></i> Reassign Driver'
+        : '<i class="fas fa-check"></i> Assign Driver';
+    document.getElementById('assignDriverSelect').value = '';
     openModal('assignModal');
 }
 
-function filterDriverList(q) {
-    q = q.toLowerCase();
-    document.querySelectorAll('.dl-item').forEach(function(el) {
-        var s = el.dataset.search || '';
-        el.style.display = (!q || s.includes(q)) ? '' : 'none';
-    });
-}
-
-function selectDriver(driverId, driverName) {
-    _assignSelectedId = driverId;
-    document.querySelectorAll('.dl-item').forEach(function(el) {
-        el.classList.remove('dl-selected');
-    });
-    // Find matching item and highlight
-    document.querySelectorAll('.dl-item').forEach(function(el) {
-        var btn = el.querySelector('.dl-select-btn');
-        if (btn && btn.getAttribute('onclick').includes('(' + driverId + ',')) {
-            el.classList.add('dl-selected');
-        }
-    });
-    document.getElementById('confirmAssignBtn').disabled = false;
-    document.getElementById('confirmAssignBtn').textContent = '✓ Assign ' + driverName;
-}
-
-function confirmAssign() {
-    if (!_assignBookingId || !_assignSelectedId) return;
-    var note = document.getElementById('assignNote').value;
-    var btn  = document.getElementById('confirmAssignBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Assigning…';
-
-    fetch('/admin/dispatch-action.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({
-            action: 'assign_driver',
-            booking_id: _assignBookingId,
-            driver_id:  _assignSelectedId,
-            note:       note
-        })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        closeModal('assignModal');
-        if (data.success) {
-            showToast(data.message, 'success');
-            setTimeout(function() { location.reload(); }, 1200);
-        } else {
-            showToast(data.error || 'Assignment failed.', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-check"></i> Confirm Assignment';
-        }
-    })
-    .catch(function() {
-        showToast('Network error. Please try again.', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-check"></i> Confirm Assignment';
-    });
-}
-
-// ── STATUS MODAL ────────────────────────────────────────────
-var _scMap = {}, _slMap = {};
-<?php foreach ($DISPATCH_STATUSES as $sk => $sm): ?>
-_scMap['<?php echo $sk; ?>'] = '<?php echo $sm['color']; ?>';
-_slMap['<?php echo $sk; ?>'] = '<?php echo $sm['label']; ?>';
-<?php endforeach; ?>
-
+// ── Status Modal ──
 function openStatusModal(bookingId, ref, currentStatus) {
-    _statusBookingId = bookingId;
-    _selectedStatus  = null;
-    document.getElementById('statusBookingRef').textContent = ref;
-    var badge = document.getElementById('currentStatusBadge');
-    badge.innerHTML = '<span class="dr-status-badge" style="background:' + (_scMap[currentStatus] || '#6b7280') + '">' + (_slMap[currentStatus] || currentStatus) + '</span>';
-    document.getElementById('statusNote').value = '';
-    document.getElementById('confirmStatusBtn').disabled = true;
-    // Reset button highlights
-    document.querySelectorAll('.sg-btn').forEach(function(b) { b.classList.remove('sg-selected'); });
+    document.getElementById('statusBookingId').value = bookingId;
+    document.getElementById('statusOldStatus').value = currentStatus;
+    document.getElementById('statusBookingInfo').innerHTML =
+        '<strong>' + ref + '</strong> — Current: <span class="status-badge" style="background:var(--status-color,#6b7280)">' + currentStatus.replace('_', ' ') + '</span>';
+    document.getElementById('statusSelect').value = '';
     openModal('statusModal');
 }
 
-function selectStatus(status) {
-    _selectedStatus = status;
-    document.querySelectorAll('.sg-btn').forEach(function(b) {
-        b.classList.toggle('sg-selected', b.dataset.status === status);
-    });
-    document.getElementById('confirmStatusBtn').disabled = false;
-    document.getElementById('confirmStatusBtn').innerHTML =
-        '<i class="fas fa-check"></i> Set to ' + (_slMap[status] || status);
-}
+// ── Note Modal ──
+function openNoteModal(bookingId, ref) {
+    document.getElementById('noteBookingId').value = bookingId;
+    document.getElementById('noteBookingInfo').innerHTML = '<strong>' + ref + '</strong>';
+    document.getElementById('noteText').value = '';
+    document.getElementById('noteExistingNotes').innerHTML = '<div class="dmodal-loading">Loading notes...</div>';
+    openModal('noteModal');
 
-function confirmStatus() {
-    if (!_statusBookingId || !_selectedStatus) return;
-    var note = document.getElementById('statusNote').value;
-    var btn  = document.getElementById('confirmStatusBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating…';
-
-    fetch('/admin/dispatch-action.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({
-            action:     'update_status',
-            booking_id: _statusBookingId,
-            new_status: _selectedStatus,
-            note:       note
+    // Fetch existing notes
+    fetch('/admin/api/dispatch.php?action=get_notes&booking_id=' + bookingId)
+        .then(r => r.json())
+        .then(data => {
+            const container = document.getElementById('noteExistingNotes');
+            if (data.notes && data.notes.length > 0) {
+                let html = '<div class="existing-notes-list">';
+                data.notes.forEach(n => {
+                    html += '<div class="enote' + (n.is_priority ? ' enote-priority' : '') + '">'
+                        + '<div class="enote-text">' + (n.is_priority ? '<i class="fas fa-exclamation-triangle"></i> ' : '') + escapeHtml(n.note) + '</div>'
+                        + '<div class="enote-meta">' + escapeHtml(n.admin_name) + ' — ' + n.created_at + '</div>'
+                        + '</div>';
+                });
+                html += '</div>';
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<div class="enote-empty">No notes yet</div>';
+            }
         })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        closeModal('statusModal');
-        if (data.success) {
-            showToast(data.message, 'success');
-            setTimeout(function() { location.reload(); }, 1200);
-        } else {
-            showToast(data.error || 'Update failed.', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-check"></i> Update Status';
-        }
-    })
-    .catch(function() {
-        showToast('Network error.', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-check"></i> Update Status';
-    });
+        .catch(() => {
+            document.getElementById('noteExistingNotes').innerHTML = '<div class="enote-empty">Could not load notes</div>';
+        });
 }
 
-// ── NOTES MODAL ─────────────────────────────────────────────
-function openNotesModal(bookingId, ref) {
-    _notesBookingId = bookingId;
-    document.getElementById('notesBookingRef').textContent = ref;
-    document.getElementById('newNote').value = '';
-    document.getElementById('notesList').innerHTML = '<p style="color:#666;font-size:.85rem"><i class="fas fa-spinner fa-spin"></i> Loading notes…</p>';
-    openModal('notesModal');
-    loadNotes(bookingId);
-}
+// ── Form Submissions (AJAX) ──
+function submitAssign(e) {
+    e.preventDefault();
+    const form = document.getElementById('assignForm');
+    const data = new FormData(form);
+    data.append('action', 'assign_driver');
+    data.append('assigned_by', '<?= $_SESSION['user_id'] ?>');
 
-function loadNotes(bookingId) {
-    fetch('/admin/dispatch-action.php?action=get_notes&id=' + bookingId)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        var list = document.getElementById('notesList');
-        if (!data.success || !data.notes.length) {
-            list.innerHTML = '<p style="color:#888;font-size:.85rem;font-style:italic">No notes yet for this booking.</p>';
-            return;
-        }
-        list.innerHTML = data.notes.map(function(n) {
-            return '<div class="note-item">'
-                + '<div class="note-meta">'
-                + '<strong>' + htmlEscape(n.first_name + ' ' + n.last_name) + '</strong>'
-                + '<span class="note-time">' + formatNoteTime(n.created_at) + '</span>'
-                + '</div>'
-                + '<div class="note-body">' + htmlEscape(n.note) + '</div>'
-                + '</div>';
-        }).join('');
-    })
-    .catch(function() {
-        document.getElementById('notesList').innerHTML = '<p style="color:#ef4444">Failed to load notes.</p>';
-    });
-}
-
-function submitNote() {
-    var note = document.getElementById('newNote').value.trim();
-    if (!note) { showToast('Note cannot be empty.', 'error'); return; }
-
-    fetch('/admin/dispatch-action.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({
-            action:     'add_note',
-            booking_id: _notesBookingId,
-            note:       note
+    fetch('/admin/api/dispatch.php', { method: 'POST', body: data })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                closeModal('assignModal');
+                showToast(res.message, 'success');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                showToast(res.message || 'Error assigning driver', 'error');
+            }
         })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.success) {
-            document.getElementById('newNote').value = '';
-            showToast('Note saved.', 'success');
-            loadNotes(_notesBookingId);
-        } else {
-            showToast(data.error || 'Failed to save note.', 'error');
-        }
-    })
-    .catch(function() { showToast('Network error.', 'error'); });
+        .catch(() => showToast('Network error', 'error'));
+    return false;
 }
 
-// ── Utility ──────────────────────────────────────────────────
-function htmlEscape(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function submitStatus(e) {
+    e.preventDefault();
+    const form = document.getElementById('statusForm');
+    const data = new FormData(form);
+    data.append('action', 'update_status');
+    data.append('changed_by', '<?= $_SESSION['user_id'] ?>');
+
+    fetch('/admin/api/dispatch.php', { method: 'POST', body: data })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                closeModal('statusModal');
+                showToast(res.message, 'success');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                showToast(res.message || 'Error updating status', 'error');
+            }
+        })
+        .catch(() => showToast('Network error', 'error'));
+    return false;
 }
-function formatNoteTime(ts) {
-    if (!ts) return '';
-    var d = new Date(ts.replace(' ','T'));
-    return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' '
-         + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+function submitNote(e) {
+    e.preventDefault();
+    const form = document.getElementById('noteForm');
+    const data = new FormData(form);
+    data.append('action', 'add_note');
+    data.append('admin_id', '<?= $_SESSION['user_id'] ?>');
+
+    fetch('/admin/api/dispatch.php', { method: 'POST', body: data })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                closeModal('noteModal');
+                showToast(res.message, 'success');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                showToast(res.message || 'Error adding note', 'error');
+            }
+        })
+        .catch(() => showToast('Network error', 'error'));
+    return false;
+}
+
+// ── Toast Notification ──
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = 'dispatch-toast dtoast-' + type;
+    toast.innerHTML = '<i class="fas fa-' + (type === 'success' ? 'check-circle' : 'exclamation-circle') + '"></i> ' + message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.classList.add('dtoast-show'), 10);
+    setTimeout(() => { toast.classList.remove('dtoast-show'); setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+// ── Escape HTML ──
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 </script>
 

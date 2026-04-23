@@ -33,7 +33,7 @@ $flash = getFlash();
     </div>
     <nav class="sidebar-nav">
         <a href="/admin/" class="<?php echo $adminPage === 'index' ? 'active' : ''; ?>"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
-        <a href="/admin/dispatch.php" class="sidebar-dispatch <?php echo $adminPage === 'dispatch' ? 'active' : ''; ?>"><i class="fas fa-broadcast-tower"></i> Dispatch</a>
+        <a href="/admin/dispatch.php" class="<?php echo $adminPage === 'dispatch' ? 'active' : ''; ?>"><i class="fas fa-satellite-dish"></i> Dispatch Center</a>
         <a href="/admin/bookings.php" class="<?php echo $adminPage === 'bookings' ? 'active' : ''; ?>"><i class="fas fa-calendar-check"></i> Bookings</a>
         <a href="/admin/drivers.php" class="<?php echo $adminPage === 'drivers' ? 'active' : ''; ?>"><i class="fas fa-id-card"></i> Drivers</a>
         <a href="/admin/fleet.php" class="<?php echo $adminPage === 'fleet' ? 'active' : ''; ?>"><i class="fas fa-car"></i> Fleet</a>
