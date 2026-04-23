@@ -1,17 +1,26 @@
 <?php
 /**
- * One-time migration runner — Dispatch Command Center
- * Visit this page once to apply the migration, then it deletes itself.
+ * Migration Runner — Step 2: Dispatch Console
+ * Standalone page, no admin layout dependency.
  */
-require_once 'includes/admin-header.php';
+require_once dirname(__DIR__) . '/includes/config.php';
+require_once dirname(__DIR__) . '/includes/db.php';
+require_once dirname(__DIR__) . '/includes/auth.php';
+
+if (!isLoggedIn() || !isAdmin()) {
+    header('Location: /admin/login.php');
+    exit;
+}
 
 $sqlFile = __DIR__ . '/dispatch-migration.sql';
 $results = [];
 $allOk   = true;
+$ran     = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
+    $ran = true;
     if (!file_exists($sqlFile)) {
-        $results[] = ['sql' => 'Load file', 'ok' => false, 'msg' => 'dispatch-migration.sql not found in admin/'];
+        $results[] = ['sql' => 'Load file', 'ok' => false, 'msg' => 'admin/dispatch-migration.sql not found'];
         $allOk = false;
     } else {
         $raw        = file_get_contents($sqlFile);
@@ -19,89 +28,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
             array_map('trim', preg_split('/;[\s]*\n/', $raw)),
             fn($s) => $s !== '' && !preg_match('/^--/', $s) && !preg_match('/^USE\s/i', $s)
         );
-
-        require_once dirname(__DIR__) . '/includes/db.php';
-
         foreach ($statements as $sql) {
             if (trim($sql) === '') continue;
             try {
                 dbExecute($sql, []);
-                $results[] = ['sql' => mb_strimwidth(trim($sql), 0, 80, '...'), 'ok' => true,  'msg' => 'OK'];
+                $results[] = ['sql' => mb_strimwidth(trim($sql), 0, 90, '...'), 'ok' => true, 'msg' => 'OK'];
             } catch (Throwable $e) {
-                $msg = $e->getMessage();
-                // Already-exists errors are harmless — treat as success
+                $msg      = $e->getMessage();
                 $harmless = str_contains($msg, 'already exists') || str_contains($msg, 'Duplicate column');
-                $results[] = ['sql' => mb_strimwidth(trim($sql), 0, 80, '...'), 'ok' => $harmless, 'msg' => $harmless ? 'Already exists (skipped)' : $msg];
+                $results[] = ['sql' => mb_strimwidth(trim($sql), 0, 90, '...'), 'ok' => $harmless, 'msg' => $harmless ? 'Already exists (skipped)' : $msg];
                 if (!$harmless) $allOk = false;
             }
         }
-
-        // No self-destruct — safe to re-run (all statements skip if already exists)
     }
 }
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Step 2 — Dispatch Migration</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f3f4f6; color: #1a1a1a; padding: 40px 20px; }
+        .wrap { max-width: 820px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; margin-bottom: 6px; }
+        .sub { color: #6b7280; font-size: .9rem; margin-bottom: 24px; }
+        .steps { display: flex; gap: 8px; margin-bottom: 28px; flex-wrap: wrap; }
+        .step { padding: 6px 16px; border-radius: 20px; font-size: .8rem; font-weight: 700; }
+        .step-active { background: #1a1a1a; color: #FFD400; }
+        .step-done   { background: #d1fae5; color: #065f46; }
+        .step-next   { background: #e5e7eb; color: #6b7280; }
+        .card { background: #fff; border-radius: 12px; padding: 28px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 20px; }
+        .warn { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: .88rem; line-height: 1.6; }
+        .warn ul { margin: 6px 0 0 20px; }
+        .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; background: #1a1a1a; color: #FFD400; border: none; border-radius: 8px; font-size: 1rem; font-weight: 700; cursor: pointer; }
+        .btn:hover { background: #333; }
+        table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+        th { background: #1e293b; color: #fff; padding: 8px 12px; text-align: left; }
+        td { padding: 7px 12px; border-bottom: 1px solid #e5e7eb; font-family: monospace; word-break: break-all; }
+        .ok   { color: #059669; font-weight: 700; font-family: sans-serif; }
+        .skip { color: #d97706; font-weight: 700; font-family: sans-serif; }
+        .err  { color: #dc2626; font-weight: 700; font-family: sans-serif; }
+        .banner-ok  { background: #d1fae5; border: 1px solid #059669; border-radius: 8px; padding: 16px 20px; margin-top: 20px; color: #065f46; font-weight: 700; font-size: .95rem; }
+        .banner-err { background: #fee2e2; border: 1px solid #dc2626; border-radius: 8px; padding: 16px 20px; margin-top: 20px; color: #991b1b; font-weight: 700; font-size: .95rem; }
+        .banner-ok a, .banner-err a { color: inherit; text-decoration: underline; }
+        .back { display: inline-block; margin-top: 16px; color: #6b7280; font-size: .85rem; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1><i class="fas fa-satellite-dish"></i> Database Migration Runner</h1>
+    <p class="sub">Run these three steps in order to set up the Driver Panel and Real-Time features.</p>
 
-<style>
-.mig-wrap { max-width: 760px; margin: 2rem auto; }
-.mig-wrap h2 { font-size: 1.4rem; margin-bottom: .5rem; }
-.mig-warn { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; font-size: .9rem; }
-.mig-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 1rem; }
-.mig-table th { background: #1e293b; color: #fff; padding: .5rem .75rem; text-align: left; }
-.mig-table td { padding: .45rem .75rem; border-bottom: 1px solid #e2e8f0; font-family: monospace; }
-.mig-ok   { color: #059669; font-weight: 600; }
-.mig-skip { color: #d97706; font-weight: 600; }
-.mig-err  { color: #dc2626; font-weight: 600; }
-.mig-success { background: #d1fae5; border: 1px solid #059669; border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1.25rem; font-weight: 600; color: #065f46; }
-.mig-failure { background: #fee2e2; border: 1px solid #dc2626; border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1.25rem; font-weight: 600; color: #991b1b; }
-.btn-run { background: #0f172a; color: #fff; border: none; padding: .65rem 1.75rem; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: 600; }
-.btn-run:hover { background: #1e3a5f; }
-</style>
-
-<div class="mig-wrap">
-    <h2><i class="fas fa-database"></i> Dispatch Migration Runner</h2>
-
-    <?php if (empty($results)): ?>
-    <div class="mig-warn">
-        <strong><i class="fas fa-exclamation-triangle"></i> Run once only.</strong>
-        This script will create 3 new tables (<code>dispatch_notes</code>, <code>booking_status_history</code>, <code>assignment_log</code>)
-        and add the <code>dispatcher_notes</code> column to <code>bookings</code>.
-        It will <strong>delete itself</strong> after a successful run.
+    <div class="steps">
+        <span class="step step-done">Step 1 · Driver Panel ✓</span>
+        <span class="step step-active">Step 2 · Dispatch Console</span>
+        <span class="step step-next">Step 3 · Real-Time &amp; GPS</span>
     </div>
-    <form method="POST">
-        <button type="submit" name="run" value="1" class="btn-run"><i class="fas fa-play"></i> Run Migration Now</button>
-    </form>
 
-    <?php else: ?>
-    <table class="mig-table">
-        <thead><tr><th>#</th><th>Statement</th><th>Result</th><th>Message</th></tr></thead>
-        <tbody>
-        <?php foreach ($results as $i => $r): ?>
-        <tr>
-            <td><?= $i + 1 ?></td>
-            <td><?= htmlspecialchars($r['sql']) ?></td>
-            <td class="<?= $r['ok'] ? ($r['msg'] === 'OK' ? 'mig-ok' : 'mig-skip') : 'mig-err' ?>">
-                <?= $r['ok'] ? ($r['msg'] === 'OK' ? '✓ OK' : '⚠ Skipped') : '✗ Error' ?>
-            </td>
-            <td><?= htmlspecialchars($r['msg']) ?></td>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
+    <div class="card">
+        <?php if (!$ran): ?>
+        <div class="warn">
+            <strong><i class="fas fa-exclamation-triangle"></i> What this adds:</strong>
+            <ul>
+                <li>Creates <code>dispatch_notes</code>, <code>booking_status_history</code>, <code>assignment_log</code> tables</li>
+                <li>Adds <code>dispatcher_notes</code> column to <code>bookings</code></li>
+            </ul>
+            Already-existing columns and tables are safely skipped.
+        </div>
+        <form method="POST" action="">
+            <button type="submit" name="run" value="1" class="btn">
+                <i class="fas fa-play"></i> Run Step 2 Now
+            </button>
+        </form>
 
-    <?php if ($allOk): ?>
-    <div class="mig-success">
-        <i class="fas fa-check-circle"></i> Migration completed successfully!
-        Proceed to <a href="/admin/run-realtime-migration.php">Step 3 — Real-Time &amp; GPS Migration &rarr;</a>
+        <?php else: ?>
+        <table>
+            <thead><tr><th>#</th><th>Statement</th><th>Result</th><th>Message</th></tr></thead>
+            <tbody>
+            <?php foreach ($results as $i => $r): ?>
+            <tr>
+                <td><?= $i + 1 ?></td>
+                <td><?= htmlspecialchars($r['sql']) ?></td>
+                <td class="<?= $r['ok'] ? ($r['msg'] === 'OK' ? 'ok' : 'skip') : 'err' ?>">
+                    <?= $r['ok'] ? ($r['msg'] === 'OK' ? '✓ OK' : '⚠ Skipped') : '✗ Error' ?>
+                </td>
+                <td style="font-family:sans-serif"><?= htmlspecialchars($r['msg']) ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <?php if ($allOk): ?>
+        <div class="banner-ok">
+            <i class="fas fa-check-circle"></i> Step 2 complete!
+            &nbsp;&rarr;&nbsp; <a href="/admin/run-realtime-migration.php">Continue to Step 3 — Real-Time &amp; GPS</a>
+        </div>
+        <?php else: ?>
+        <div class="banner-err">
+            <i class="fas fa-times-circle"></i> One or more errors. Fix the issues above and retry.
+        </div>
+        <form method="POST" action="" style="margin-top:16px">
+            <button type="submit" name="run" value="1" class="btn"><i class="fas fa-redo"></i> Retry</button>
+        </form>
+        <?php endif; ?>
+        <?php endif; ?>
     </div>
-    <?php else: ?>
-    <div class="mig-failure">
-        <i class="fas fa-times-circle"></i> One or more statements failed. Review the errors above and fix before retrying.
-    </div>
-    <form method="POST" style="margin-top:1rem">
-        <button type="submit" name="run" value="1" class="btn-run"><i class="fas fa-redo"></i> Retry</button>
-    </form>
-    <?php endif; ?>
-    <?php endif; ?>
+
+    <a href="/admin/" class="back"><i class="fas fa-arrow-left"></i> Back to Admin</a>
 </div>
-
-<?php require_once 'includes/admin-footer.php'; ?>
+</body>
+</html>
