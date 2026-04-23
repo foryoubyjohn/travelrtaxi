@@ -35,9 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
             }
         }
 
-        if ($allOk) {
-            @unlink(__FILE__);
-        }
+        // No self-destruct — safe to re-run (all statements skip if already exists)
     }
 }
 ?>
@@ -100,8 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
     <?php if ($allOk): ?>
     <div class="mig-success">
         <i class="fas fa-check-circle"></i> Migration completed successfully!
-        This script has been deleted. Proceed to
-        <a href="/admin/run-migration.php">Step 2 — Dispatch Migration</a>.
+        Proceed to <a href="/admin/run-migration.php">Step 2 — Dispatch Migration &rarr;</a>
     </div>
     <?php else: ?>
     <div class="mig-failure">

@@ -36,10 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
             }
         }
 
-        // Self-destruct on full success
-        if ($allOk) {
-            @unlink(__FILE__);
-        }
+        // No self-destruct — safe to re-run (all statements skip if already exists)
     }
 }
 ?>
@@ -94,8 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
     <?php if ($allOk): ?>
     <div class="mig-success">
         <i class="fas fa-check-circle"></i> Migration completed successfully!
-        This script has been deleted. Proceed to
-        <a href="/admin/run-realtime-migration.php">Step 3 — Real-Time &amp; GPS Migration</a>.
+        Proceed to <a href="/admin/run-realtime-migration.php">Step 3 — Real-Time &amp; GPS Migration &rarr;</a>
     </div>
     <?php else: ?>
     <div class="mig-failure">

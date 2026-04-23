@@ -36,10 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
             }
         }
 
-        // Self-destruct on full success
-        if ($allOk) {
-            @unlink(__FILE__);
-        }
+        // No self-destruct — safe to re-run (all statements skip if already exists)
     }
 }
 ?>
@@ -100,8 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
 
     <?php if ($allOk): ?>
     <div class="mig-success">
-        <i class="fas fa-check-circle"></i> Migration completed successfully!
-        This script has been deleted. You can now use the <a href="/admin/dispatch.php">Dispatch Center</a> with live GPS tracking.
+        <i class="fas fa-check-circle"></i> All migrations complete! You can now use the
+        <a href="/admin/dispatch.php">Dispatch Center</a> with live GPS tracking,
+        and drivers can log in at <a href="/driver/login.php">Driver Login</a>.
     </div>
     <?php else: ?>
     <div class="mig-failure">
