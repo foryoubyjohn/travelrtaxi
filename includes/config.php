@@ -14,7 +14,7 @@ define('DB_CHARSET', 'utf8mb4');
 // Site Configuration
 define('SITE_NAME', 'Travelr Taxi & Tours Services');
 define('SITE_TAGLINE', 'The Affordable Way To Travel');
-define('SITE_URL', 'http://localhost'); // Change in production
+define('SITE_URL', 'https://travelrtaxi.com');
 define('SITE_EMAIL', 'info@travelrtaxi.com');
 
 // Contact Info
