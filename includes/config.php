@@ -4,6 +4,8 @@
  * Configuration File
  */
 
+if (defined('DB_HOST')) return;
+
 // Database Configuration
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'agmsxxte_travelrtaxi');
