@@ -6,9 +6,9 @@
 
 // Database Configuration
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'travelr_taxi');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_NAME', 'agmsxxte_travelrtaxi');
+define('DB_USER', 'agmsxxte_taxi');
+define('DB_PASS', 'toqryj-5nomqi-gezCim');
 define('DB_CHARSET', 'utf8mb4');
 
 // Site Configuration
