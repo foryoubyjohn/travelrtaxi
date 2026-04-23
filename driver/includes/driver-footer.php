@@ -33,7 +33,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 </nav>
 <?php endif; ?>
 
-<!-- Driver JS -->
+<!-- Real-time CSS -->
+<link rel="stylesheet" href="/assets/css/realtime.css">
+
+<!-- Driver Real-time JS -->
+<script src="/assets/js/driver-realtime.js"></script>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Auto-dismiss flash messages
@@ -67,11 +72,39 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Auto-refresh dashboard every 30 seconds
-    if (document.body.dataset.autoRefresh === 'true') {
-        setInterval(function() {
-            location.reload();
-        }, 30000);
+    // Initialize real-time module (replaces crude 30s page reload)
+    var currentPage = '<?= basename($_SERVER["PHP_SELF"]) ?>';
+    if (typeof DriverRealtime !== 'undefined') {
+        // Dashboard: start polling + location toggle listener
+        if (currentPage === 'index.php') {
+            DriverRealtime.startDashboardPolling();
+
+            // Location toggle handler
+            var locToggle = document.getElementById('locationToggle');
+            if (locToggle) {
+                locToggle.addEventListener('change', function() {
+                    if (this.checked) {
+                        DriverRealtime.startLocationSharing();
+                    } else {
+                        DriverRealtime.stopLocationSharing();
+                    }
+                });
+                // Auto-start if already enabled
+                if (locToggle.checked) {
+                    DriverRealtime.startLocationSharing();
+                }
+            }
+        }
+
+        // Ride detail: start ride polling + location sharing if active
+        if (currentPage === 'ride-detail.php') {
+            var bookingId = document.body.dataset.bookingId || '';
+            var rideStatus = document.querySelector('.ride-status-banner');
+            var currentStatus = rideStatus ? rideStatus.className.replace('ride-status-banner status-', '') : '';
+            if (bookingId) {
+                DriverRealtime.startRideDetailPolling(bookingId, currentStatus);
+            }
+        }
     }
 });
 </script>

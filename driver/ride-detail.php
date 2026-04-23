@@ -149,7 +149,16 @@ $actionConfig = [
 ];
 ?>
 
-<div class="driver-content">
+<div class="driver-content" data-booking-id="<?= $bookingId ?>">
+
+    <!-- Dispatcher Notes (real-time updated) -->
+    <?php if (!empty($ride['dispatcher_notes'])): ?>
+    <div class="dispatch-notes-indicator" id="dispatcherNotesValue">
+        <i class="fas fa-bullhorn"></i> <strong>Dispatch:</strong> <?= sanitize($ride['dispatcher_notes']) ?>
+    </div>
+    <?php else: ?>
+    <div class="dispatch-notes-indicator" id="dispatcherNotesValue" style="display:none;"></div>
+    <?php endif; ?>
 
     <!-- Status Banner -->
     <div class="ride-status-banner status-<?= $ride['status'] ?>">
@@ -330,6 +339,9 @@ $actionConfig = [
 </div>
 
 <script>
+// Set booking ID on body for real-time JS
+document.body.dataset.bookingId = '<?= $bookingId ?>';
+
 function toggleNote() {
     const section = document.getElementById('noteSection');
     section.style.display = section.style.display === 'none' ? 'block' : 'none';

@@ -55,6 +55,22 @@ $vehicles = dbFetchAll("SELECT * FROM vehicles WHERE status = 'active' ORDER BY 
             <?php if ($booking['notes']): ?>
             <div class="detail-item"><span>Notes:</span> <em><?php echo sanitize($booking['notes']); ?></em></div>
             <?php endif; ?>
+            <?php if (!empty($booking['tracking_token'])): ?>
+            <div class="detail-item">
+                <span>Tracking Link:</span>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <a href="/track.php?token=<?= sanitize($booking['tracking_token']) ?>" target="_blank" class="btn btn-sm btn-outline" style="font-size:0.75rem;">
+                        <i class="fas fa-map-marker-alt"></i> View Tracking Page
+                    </a>
+                    <button type="button" onclick="copyTrackingLink(this)" data-url="<?= SITE_URL ?>/track.php?token=<?= sanitize($booking['tracking_token']) ?>" class="btn btn-sm btn-dark" style="font-size:0.75rem;">
+                        <i class="fas fa-copy"></i> Copy Link
+                    </button>
+                    <a href="<?= getWhatsAppLink('Track your ride here: ' . SITE_URL . '/track.php?token=' . $booking['tracking_token']) ?>" target="_blank" class="btn btn-sm btn-whatsapp" style="font-size:0.75rem;">
+                        <i class="fab fa-whatsapp"></i> Send via WhatsApp
+                    </a>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -149,5 +165,26 @@ if (!empty($actionLog)):
     </div>
 </div>
 <?php endif; ?>
+
+<script>
+function copyTrackingLink(btn) {
+    var url = btn.dataset.url;
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(function() {
+            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            setTimeout(function() { btn.innerHTML = '<i class="fas fa-copy"></i> Copy Link'; }, 2000);
+        });
+    } else {
+        var input = document.createElement('input');
+        input.value = url;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(function() { btn.innerHTML = '<i class="fas fa-copy"></i> Copy Link'; }, 2000);
+    }
+}
+</script>
 
 <?php require_once 'includes/admin-footer.php'; ?>

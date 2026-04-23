@@ -50,6 +50,28 @@ $pendingAccept = dbFetchAll(
 
 <div class="driver-content" data-auto-refresh="true">
 
+    <!-- Location Sharing Card -->
+    <div class="location-sharing-card">
+        <div class="location-sharing-header">
+            <h4><i class="fas fa-satellite-dish"></i> Location Sharing</h4>
+            <label class="loc-toggle">
+                <input type="checkbox" id="locationToggle" <?= ($driverRecord['location_sharing'] ?? 0) ? 'checked' : '' ?>>
+                <span class="loc-toggle-slider"></span>
+            </label>
+        </div>
+        <div class="location-status-row">
+            <span class="loc-status-dot <?= ($driverRecord['location_sharing'] ?? 0) ? 'loc-live' : 'loc-off' ?>" id="locationStatusDot"></span>
+            <span id="locationStatusText"><?= ($driverRecord['location_sharing'] ?? 0) ? 'Sharing your location' : 'Location sharing off' ?></span>
+            <span id="locationLastUpdate" style="margin-left:auto;font-size:0.7rem;color:#64748b;">
+                <?= ($driverRecord['last_location_at'] ?? null) ? date('g:i A', strtotime($driverRecord['last_location_at'])) : '' ?>
+            </span>
+        </div>
+    </div>
+
+    <!-- Pending count badge for real-time updates -->
+    <span id="pendingCountBadge" style="display:none;"><?= count($pendingAccept) ?></span>
+    <span id="todayCountValue" style="display:none;"><?= intval($statsToday['total'] ?? 0) ?></span>
+
     <!-- Availability Quick Toggle -->
     <div class="availability-strip availability-<?= $driverRecord['availability'] ?? 'available' ?>">
         <span class="avail-dot"></span>

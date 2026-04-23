@@ -42,8 +42,9 @@ if (!empty($errors)) {
     exit;
 }
 
-// Generate booking reference
+// Generate booking reference and tracking token
 $bookingRef = generateBookingRef();
+$trackingToken = bin2hex(random_bytes(32));
 
 // Calculate estimated price
 $estimatedPrice = 0;
@@ -77,21 +78,23 @@ if (isLoggedIn()) {
     $customerId = $user['id'];
 }
 
-// Insert booking
+// Insert booking (with tracking token)
 $bookingId = dbInsert(
     "INSERT INTO bookings (booking_ref, customer_id, customer_name, customer_email, customer_phone, 
      pickup_location, dropoff_location, booking_date, booking_time, service_type, vehicle_type, 
-     passengers, estimated_price, payment_method, notes, status) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+     passengers, estimated_price, payment_method, notes, status, tracking_token) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
     [$bookingRef, $customerId, $customerName, $customerEmail, $customerPhone,
      $pickup, $dropoff, $bookingDate, $bookingTime, $serviceType, $vehicleType,
-     $passengers, $estimatedPrice, $paymentMethod, $notes]
+     $passengers, $estimatedPrice, $paymentMethod, $notes, $trackingToken]
 );
 
 if ($bookingId) {
     $_SESSION['booking_success'] = true;
     $_SESSION['booking_ref'] = $bookingRef;
     $_SESSION['booking_price'] = $estimatedPrice;
+    $_SESSION['tracking_token'] = $trackingToken;
+    $_SESSION['tracking_url'] = SITE_URL . '/track.php?token=' . $trackingToken;
     header('Location: /booking.php?success=1&ref=' . urlencode($bookingRef));
 } else {
     $_SESSION['booking_errors'] = ['An error occurred. Please try again or call us directly.'];

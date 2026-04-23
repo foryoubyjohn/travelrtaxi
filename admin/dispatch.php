@@ -60,6 +60,7 @@ $bookings = dbFetchAll(
             d_rec.id as driver_record_id,
             d_user.first_name as driver_first, d_user.last_name as driver_last, d_user.phone as driver_phone,
             d_rec.availability as driver_availability,
+            d_rec.location_sharing, d_rec.last_latitude, d_rec.last_longitude, d_rec.last_location_at,
             v.name as vehicle_name, v.plate_number
      FROM bookings b
      LEFT JOIN drivers d_rec ON b.driver_id = d_rec.id
@@ -83,6 +84,7 @@ $statsCompletedToday = dbFetchOne("SELECT COUNT(*) as c FROM bookings WHERE stat
 // ── Available Drivers (for assignment panel) ──
 $availableDrivers = dbFetchAll(
     "SELECT d.id, d.status, d.availability, d.total_trips, d.rating,
+            d.location_sharing, d.last_latitude, d.last_longitude, d.last_location_at,
             u.first_name, u.last_name, u.phone,
             v.name as vehicle_name, v.type as vehicle_type, v.plate_number, v.capacity
      FROM drivers d
@@ -120,12 +122,14 @@ foreach ($statusGroups as $key => $group) {
 
 <!-- Dispatch-specific CSS -->
 <link rel="stylesheet" href="/assets/css/dispatch.css">
+<link rel="stylesheet" href="/assets/css/realtime.css">
 
 <div class="dispatch-header">
     <div class="dispatch-title-row">
         <h1 class="page-title"><i class="fas fa-satellite-dish"></i> Dispatch Command Center</h1>
         <div class="dispatch-actions-top">
             <button onclick="location.reload()" class="btn btn-sm btn-outline" title="Refresh"><i class="fas fa-sync-alt"></i> Refresh</button>
+            <span class="sync-indicator" id="syncIndicator"><span class="sync-dot sync-dot-live"></span> Live</span>
             <span class="dispatch-time" id="dispatchClock"></span>
         </div>
     </div>
@@ -277,6 +281,20 @@ foreach ($statusGroups as $key => $group) {
                             <a href="tel:<?= sanitize($b['driver_phone']) ?>" class="dcard-btn-mini" title="Call Driver"><i class="fas fa-phone"></i></a>
                         </div>
                     </div>
+                    <?php
+                    // GPS location indicator
+                    if ($b['location_sharing'] && $b['last_latitude']):
+                        $locAge = time() - strtotime($b['last_location_at'] ?? '2000-01-01');
+                        $isLive = ($locAge < 120);
+                        $isStale = ($locAge >= 120 && $locAge < 600);
+                        if ($isLive || $isStale):
+                    ?>
+                    <div class="dcard-location <?= $isLive ? 'dcard-loc-live' : 'dcard-loc-stale' ?>">
+                        <span class="dcard-loc-dot"></span>
+                        <?= $isLive ? 'Live' : 'Last: ' . date('g:i A', strtotime($b['last_location_at'])) ?>
+                        <span class="dcard-loc-coords" title="<?= $b['last_latitude'] ?>, <?= $b['last_longitude'] ?>"><i class="fas fa-map-pin"></i></span>
+                    </div>
+                    <?php endif; endif; ?>
                     <?php endif; ?>
 
                     <!-- Dispatcher Notes Preview -->
@@ -327,6 +345,18 @@ foreach ($statusGroups as $key => $group) {
                             <i class="fas fa-star" style="color:#f59e0b"></i> <?= number_format($drv['rating'], 1) ?>
                             &middot; <?= $drv['total_trips'] ?> trips
                         </span>
+                        <?php
+                        if ($drv['location_sharing'] && $drv['last_latitude']):
+                            $drvLocAge = time() - strtotime($drv['last_location_at'] ?? '2000-01-01');
+                            $drvLive = ($drvLocAge < 120);
+                            $drvStale = ($drvLocAge >= 120 && $drvLocAge < 600);
+                            if ($drvLive || $drvStale):
+                        ?>
+                        <span class="driver-loc-badge <?= $drvLive ? 'driver-loc-live' : 'driver-loc-stale' ?>">
+                            <span class="dloc-dot"></span>
+                            <?= $drvLive ? 'Live' : 'Last: ' . date('g:i A', strtotime($drv['last_location_at'])) ?>
+                        </span>
+                        <?php endif; endif; ?>
                     </div>
                 </div>
                 <div class="driver-row-right">
@@ -476,8 +506,8 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-// ── Auto-refresh every 60 seconds ──
-setTimeout(() => location.reload(), 60000);
+// ── Real-time polling (replaces crude 60s page reload) ──
+// Initialized at bottom of script
 
 // ── Modal Helpers ──
 function openModal(id) {
@@ -628,6 +658,27 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+</script>
+
+<!-- Real-time Polling Module -->
+<script src="/assets/js/dispatch-realtime.js"></script>
+<script>
+// Initialize dispatch real-time polling
+document.addEventListener('DOMContentLoaded', function() {
+    DispatchRealtime.init('<?= $filter ?>');
+
+    // Pause polling when modals are open
+    var origOpenModal = window.openModal;
+    window.openModal = function(id) {
+        DispatchRealtime.pause();
+        origOpenModal(id);
+    };
+    var origCloseModal = window.closeModal;
+    window.closeModal = function(id) {
+        origCloseModal(id);
+        DispatchRealtime.resume();
+    };
+});
 </script>
 
 <?php require_once 'includes/admin-footer.php'; ?>
