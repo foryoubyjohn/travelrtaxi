@@ -10,7 +10,7 @@ if (defined('DB_HOST')) return;
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'agmsxxte_travelrtaxi');
 define('DB_USER', 'agmsxxte_taxi');
-define('DB_PASS', 'toqryj-5nomqi-gezCim');
+define('DB_PASS', 'havQok-siqta8-wyngyz');
 define('DB_CHARSET', 'utf8mb4');
 
 // Site Configuration
