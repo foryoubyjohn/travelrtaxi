@@ -54,10 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run'])) {
             } catch (Throwable $e) {
                 $msg      = $e->getMessage();
                 // Treat "already exists" / duplicate as harmless
-                $harmless = stripos($msg, 'already exists')  !== false
-                         || stripos($msg, 'Duplicate column') !== false
-                         || stripos($msg, 'Duplicate entry')  !== false
-                         || stripos($msg, 'duplicate key')    !== false;
+                $harmless = stripos($msg, 'already exists')       !== false
+                         || stripos($msg, 'Duplicate column')      !== false
+                         || stripos($msg, 'Duplicate column name') !== false
+                         || stripos($msg, 'Duplicate entry')       !== false
+                         || stripos($msg, 'Duplicate key name')    !== false
+                         || stripos($msg, 'duplicate key')         !== false;
                 $results[] = [
                     'sql' => mb_strimwidth(trim($sql), 0, 100, '...'),
                     'ok'  => $harmless,

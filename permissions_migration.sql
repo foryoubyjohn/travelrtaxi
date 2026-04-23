@@ -15,34 +15,40 @@ ALTER TABLE users
     NOT NULL DEFAULT 'customer';
 
 -- ============================================================
--- 2. Ensure dispatcher is in booking_status_history.changed_by_role
---    (ALTER MODIFY is idempotent when the value is already present)
+-- 2. booking_status_history: add changed_by_role column
+--    (dispatch_migration.sql did not include this column)
+--    "Duplicate column name" is treated as harmless on re-run.
 -- ============================================================
 ALTER TABLE booking_status_history
-  MODIFY COLUMN changed_by_role
+  ADD COLUMN changed_by_role
     ENUM('admin','dispatcher','driver','system','customer')
     DEFAULT 'admin';
 
--- ============================================================
--- 3. Reconcile dispatch_notes schema divergence
---    dispatch_migration.sql used 'dispatcher_id'
---    admin/dispatch-migration.sql used 'admin_id'
---    Ensure both columns exist side-by-side.
--- ============================================================
-ALTER TABLE dispatch_notes
-  ADD COLUMN IF NOT EXISTS admin_id INT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS dispatcher_id INT DEFAULT NULL;
+-- admin/api/dispatch.php inserts into 'notes' (plural); the table
+-- created by dispatch_migration.sql only has 'note' (singular).
+-- Add 'notes' so the dispatch API does not error on status changes.
+ALTER TABLE booking_status_history
+  ADD COLUMN notes TEXT DEFAULT NULL;
 
 -- ============================================================
--- 4. Ensure bookings has a tracking_token column
---    (booking.php now writes it on every insert)
+-- 3. Reconcile dispatch_notes schema divergence.
+--    Each ALTER is separate so one "Duplicate column" skip does not
+--    block the other. MySQL 5.x does not support ADD COLUMN IF NOT EXISTS.
 -- ============================================================
-ALTER TABLE bookings
-  ADD COLUMN IF NOT EXISTS tracking_token VARCHAR(64) DEFAULT NULL AFTER notes,
-  ADD COLUMN IF NOT EXISTS tracking_enabled TINYINT(1) DEFAULT 1 AFTER tracking_token;
+ALTER TABLE dispatch_notes ADD COLUMN admin_id INT DEFAULT NULL;
 
--- Index for fast token lookups on the public tracking page
-CREATE INDEX IF NOT EXISTS idx_tracking_token ON bookings (tracking_token);
+ALTER TABLE dispatch_notes ADD COLUMN dispatcher_id INT DEFAULT NULL;
+
+-- ============================================================
+-- 4. bookings: tracking_token for the public ride-tracking page.
+--    Split into separate ALTERs for the same reason as above.
+-- ============================================================
+ALTER TABLE bookings ADD COLUMN tracking_token VARCHAR(64) DEFAULT NULL AFTER notes;
+
+ALTER TABLE bookings ADD COLUMN tracking_enabled TINYINT(1) DEFAULT 1;
+
+-- Plain CREATE INDEX — "Duplicate key name" is treated as harmless on re-run.
+CREATE INDEX idx_tracking_token ON bookings (tracking_token);
 
 -- ============================================================
 -- 4. Named permissions catalogue
