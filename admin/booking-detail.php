@@ -80,7 +80,7 @@ $vehicles = dbFetchAll("SELECT * FROM vehicles WHERE status = 'active' ORDER BY 
             <div class="form-group">
                 <label>Status</label>
                 <select name="status">
-                    <?php foreach (['pending','confirmed','assigned','in_progress','completed','cancelled'] as $s): ?>
+                    <?php foreach (['pending','confirmed','assigned','accepted','declined','on_the_way','arrived','trip_started','in_progress','completed','no_show','cancelled'] as $s): ?>
                     <option value="<?php echo $s; ?>" <?php echo $booking['status'] === $s ? 'selected' : ''; ?>><?php echo ucfirst(str_replace('_',' ',$s)); ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -119,5 +119,35 @@ $vehicles = dbFetchAll("SELECT * FROM vehicles WHERE status = 'active' ORDER BY 
         </form>
     </div>
 </div>
+
+<?php
+// Show driver action log if any
+$actionLog = dbFetchAll(
+    "SELECT dal.*, u.first_name, u.last_name FROM driver_action_log dal JOIN drivers d ON dal.driver_id = d.id JOIN users u ON d.user_id = u.id WHERE dal.booking_id = ? ORDER BY dal.created_at DESC",
+    [$id]
+);
+if (!empty($actionLog)):
+?>
+<div class="admin-card" style="margin-top:20px;">
+    <h3><i class="fas fa-history"></i> Driver Activity Log</h3>
+    <div class="table-responsive">
+        <table class="admin-table">
+            <thead><tr><th>Driver</th><th>Action</th><th>From</th><th>To</th><th>Notes</th><th>Time</th></tr></thead>
+            <tbody>
+            <?php foreach ($actionLog as $log): ?>
+            <tr>
+                <td><?php echo sanitize($log['first_name'] . ' ' . $log['last_name']); ?></td>
+                <td><strong><?php echo ucfirst(str_replace('_', ' ', $log['action'])); ?></strong></td>
+                <td><?php echo $log['old_value'] ? statusBadge($log['old_value']) : '-'; ?></td>
+                <td><?php echo $log['new_value'] ? statusBadge($log['new_value']) : '-'; ?></td>
+                <td><?php echo $log['notes'] ? sanitize($log['notes']) : '-'; ?></td>
+                <td><?php echo date('M d, g:i A', strtotime($log['created_at'])); ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php require_once 'includes/admin-footer.php'; ?>

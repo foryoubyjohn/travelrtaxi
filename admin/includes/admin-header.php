@@ -33,6 +33,7 @@ $flash = getFlash();
     </div>
     <nav class="sidebar-nav">
         <a href="/admin/" class="<?php echo $adminPage === 'index' ? 'active' : ''; ?>"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+        <a href="/admin/dispatch.php" class="sidebar-dispatch <?php echo $adminPage === 'dispatch' ? 'active' : ''; ?>"><i class="fas fa-broadcast-tower"></i> Dispatch</a>
         <a href="/admin/bookings.php" class="<?php echo $adminPage === 'bookings' ? 'active' : ''; ?>"><i class="fas fa-calendar-check"></i> Bookings</a>
         <a href="/admin/drivers.php" class="<?php echo $adminPage === 'drivers' ? 'active' : ''; ?>"><i class="fas fa-id-card"></i> Drivers</a>
         <a href="/admin/fleet.php" class="<?php echo $adminPage === 'fleet' ? 'active' : ''; ?>"><i class="fas fa-car"></i> Fleet</a>
@@ -43,6 +44,7 @@ $flash = getFlash();
         <a href="/admin/messages.php" class="<?php echo $adminPage === 'messages' ? 'active' : ''; ?>"><i class="fas fa-envelope"></i> Messages</a>
         <a href="/admin/settings.php" class="<?php echo $adminPage === 'settings' ? 'active' : ''; ?>"><i class="fas fa-cog"></i> Settings</a>
         <div class="sidebar-divider"></div>
+        <a href="/driver/" target="_blank"><i class="fas fa-steering-wheel"></i> Driver Panel</a>
         <a href="/" target="_blank"><i class="fas fa-external-link-alt"></i> View Site</a>
         <a href="/admin/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
     </nav>

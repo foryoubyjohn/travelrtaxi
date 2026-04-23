@@ -6,7 +6,7 @@ require_once 'includes/admin-header.php';
 $statusFilter = sanitize($_GET['status'] ?? 'all');
 $sql = "SELECT b.*, d.id as driver_record_id FROM bookings b LEFT JOIN drivers d ON b.driver_id = d.id";
 $params = [];
-if ($statusFilter !== 'all' && in_array($statusFilter, ['pending','confirmed','assigned','in_progress','completed','cancelled'])) {
+if ($statusFilter !== 'all' && in_array($statusFilter, ['pending','confirmed','assigned','accepted','declined','on_the_way','arrived','trip_started','in_progress','completed','cancelled','no_show'])) {
     $sql .= " WHERE b.status = ?";
     $params[] = $statusFilter;
 }
@@ -41,8 +41,13 @@ $drivers = dbFetchAll("SELECT d.id, u.first_name, u.last_name, d.status FROM dri
     <a href="?status=pending" class="filter-btn <?php echo $statusFilter === 'pending' ? 'active' : ''; ?>">Pending</a>
     <a href="?status=confirmed" class="filter-btn <?php echo $statusFilter === 'confirmed' ? 'active' : ''; ?>">Confirmed</a>
     <a href="?status=assigned" class="filter-btn <?php echo $statusFilter === 'assigned' ? 'active' : ''; ?>">Assigned</a>
+    <a href="?status=accepted" class="filter-btn <?php echo $statusFilter === 'accepted' ? 'active' : ''; ?>">Accepted</a>
+    <a href="?status=on_the_way" class="filter-btn <?php echo $statusFilter === 'on_the_way' ? 'active' : ''; ?>">On the Way</a>
+    <a href="?status=arrived" class="filter-btn <?php echo $statusFilter === 'arrived' ? 'active' : ''; ?>">Arrived</a>
+    <a href="?status=trip_started" class="filter-btn <?php echo $statusFilter === 'trip_started' ? 'active' : ''; ?>">Trip Started</a>
     <a href="?status=in_progress" class="filter-btn <?php echo $statusFilter === 'in_progress' ? 'active' : ''; ?>">In Progress</a>
     <a href="?status=completed" class="filter-btn <?php echo $statusFilter === 'completed' ? 'active' : ''; ?>">Completed</a>
+    <a href="?status=no_show" class="filter-btn <?php echo $statusFilter === 'no_show' ? 'active' : ''; ?>">No Show</a>
     <a href="?status=cancelled" class="filter-btn <?php echo $statusFilter === 'cancelled' ? 'active' : ''; ?>">Cancelled</a>
 </div>
 
@@ -113,8 +118,13 @@ $drivers = dbFetchAll("SELECT d.id, u.first_name, u.last_name, d.status FROM dri
                                     <option value="pending">Pending</option>
                                     <option value="confirmed">Confirmed</option>
                                     <option value="assigned">Assigned</option>
+                                    <option value="accepted">Accepted</option>
+                                    <option value="on_the_way">On the Way</option>
+                                    <option value="arrived">Arrived</option>
+                                    <option value="trip_started">Trip Started</option>
                                     <option value="in_progress">In Progress</option>
                                     <option value="completed">Completed</option>
+                                    <option value="no_show">No Show</option>
                                     <option value="cancelled">Cancelled</option>
                                 </select>
                             </form>

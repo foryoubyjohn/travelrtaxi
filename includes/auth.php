@@ -68,6 +68,30 @@ function isDriver() {
 }
 
 /**
+ * Check if user is a dispatcher
+ */
+function isDispatcher() {
+    return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'dispatcher';
+}
+
+/**
+ * Check if user has dispatch access (admin or dispatcher)
+ */
+function canDispatch() {
+    return isAdmin() || isDispatcher();
+}
+
+/**
+ * Require driver access
+ */
+function requireDriver() {
+    if (!isLoggedIn() || !isDriver()) {
+        header('Location: /driver/login.php');
+        exit;
+    }
+}
+
+/**
  * Get current user
  */
 function getCurrentUser() {
@@ -80,6 +104,16 @@ function getCurrentUser() {
  */
 function requireAdmin() {
     if (!isLoggedIn() || !isAdmin()) {
+        header('Location: /admin/login.php');
+        exit;
+    }
+}
+
+/**
+ * Require dispatch access (admin or dispatcher role)
+ */
+function requireDispatchAccess() {
+    if (!isLoggedIn() || !canDispatch()) {
         header('Location: /admin/login.php');
         exit;
     }

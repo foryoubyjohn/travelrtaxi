@@ -57,21 +57,35 @@ function formatTime($time) {
  */
 function statusBadge($status) {
     $colors = [
-        'pending' => '#f59e0b',
-        'confirmed' => '#3b82f6',
-        'assigned' => '#8b5cf6',
-        'in_progress' => '#10b981',
-        'completed' => '#059669',
-        'cancelled' => '#ef4444',
-        'active' => '#10b981',
-        'maintenance' => '#f59e0b',
-        'retired' => '#6b7280',
-        'available' => '#10b981',
-        'on_trip' => '#3b82f6',
-        'offline' => '#6b7280',
-        'paid' => '#10b981',
-        'unpaid' => '#f59e0b',
-        'refunded' => '#8b5cf6',
+        // Booking statuses (original)
+        'pending'         => '#f59e0b',
+        'confirmed'       => '#3b82f6',
+        'assigned'        => '#8b5cf6',
+        'in_progress'     => '#10b981',
+        'completed'       => '#059669',
+        'cancelled'       => '#ef4444',
+        // Dispatch / driver lifecycle statuses
+        'accepted'        => '#06b6d4',
+        'declined'        => '#6b7280',
+        'driver_accepted' => '#06b6d4',
+        'on_the_way'      => '#f97316',
+        'arrived'         => '#eab308',
+        'trip_started'    => '#10b981',
+        'no_show'         => '#6b7280',
+        // Vehicle statuses
+        'active'          => '#10b981',
+        'maintenance'     => '#f59e0b',
+        'retired'         => '#6b7280',
+        // Driver statuses
+        'available'       => '#10b981',
+        'on_trip'         => '#3b82f6',
+        'offline'         => '#6b7280',
+        // Payment statuses
+        'paid'            => '#10b981',
+        'unpaid'          => '#f59e0b',
+        'refunded'        => '#8b5cf6',
+        // User roles
+        'dispatcher'      => '#06b6d4',
     ];
     $color = $colors[$status] ?? '#6b7280';
     $label = ucfirst(str_replace('_', ' ', $status));
